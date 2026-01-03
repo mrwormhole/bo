@@ -1,6 +1,6 @@
 #include "tree.h"
 
-char *version = "bo (tree) v0.0.1";
+char *version = "bo (The Bodhi Tree) v0.0.1";
 
 /* Globals */
 bool dflag, lflag, pflag, sflag, Fflag, aflag, fflag, uflag, gflag;
