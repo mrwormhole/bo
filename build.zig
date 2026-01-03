@@ -54,34 +54,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     });
 
     const sources = sources_buf[0..num_sources];
-    const cflags = getCFlags(b, optimize, target.result.os.tag);
-    exe.addCSourceFiles(.{
-        .files = sources,
-        .flags = cflags,
-    });
-    addPreprocessorDefines(exe, target);
-
-    exe.linkLibC();
-
-    // Strip symbols in release mode (equivalent to -s linker flag)
-    if (exe.root_module.optimize != .Debug) {
-        exe.root_module.strip = true;
-    }
-
-    return exe;
-}
-
-fn getCFlags(
-    b: *std.Build,
-    optimize: std.builtin.OptimizeMode,
-    os_tag: std.Target.Os.Tag,
-) []const []const u8 {
-    // Maximum possible flags: 7 base + 1 opt + 1 platform + 1 macos = 10
-    var flags_buf: [10][]const u8 = undefined;
-    var flags_count: usize = 0;
-
-    // Base flags for all platforms
-    const base_flags = [_][]const u8{
+    const cflags = &[_][]const u8{
         "-std=c11",
         "-Wpedantic",
         "-Wall",
@@ -90,46 +63,13 @@ fn getCFlags(
         "-Wshadow",
         "-Wconversion",
     };
-
-    for (base_flags) |flag| {
-        flags_buf[flags_count] = flag;
-        flags_count += 1;
-    }
-
-    // Optimization flags
-    switch (optimize) {
-        .Debug => {
-            flags_buf[flags_count] = "-ggdb";
-            flags_count += 1;
-        },
-        .ReleaseFast, .ReleaseSafe, .ReleaseSmall => {
-            // Linux uses -O3, others use -O2
-            const opt_flag = if (os_tag == .linux) "-O3" else "-O2";
-            flags_buf[flags_count] = opt_flag;
-            flags_count += 1;
-        },
-    }
-
-    // Platform-specific flags
-    switch (os_tag) {
-        .freebsd, .openbsd, .macos => {
-            flags_buf[flags_count] = "-fomit-frame-pointer";
-            flags_count += 1;
-        },
-        else => {},
-    }
-
-    if (os_tag == .macos) {
-        flags_buf[flags_count] = "-no-cpp-precomp";
-        flags_count += 1;
-    }
-
-    const flags = flags_buf[0..flags_count];
-
-    // Need to allocate a persistent slice since local array will go out of scope
-    const persistent_flags = b.allocator.alloc([]const u8, flags.len) catch @panic("OOM");
-    @memcpy(persistent_flags, flags);
-    return persistent_flags;
+    exe.addCSourceFiles(.{
+        .files = sources,
+        .flags = cflags,
+    });
+    addPreprocessorDefines(exe, target);
+    exe.linkLibC();
+    return exe;
 }
 
 fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
@@ -137,7 +77,6 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
     exe.root_module.addCMacro("LARGEFILE_SOURCE", "");
     exe.root_module.addCMacro("_FILE_OFFSET_BITS", "64");
 
-    // Platform-specific defines
     const os_tag = target.result.os.tag;
     switch (os_tag) {
         .linux => {
@@ -150,7 +89,6 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
         else => {},
     }
 
-    // Android-specific
     if (target.result.abi == .android) {
         exe.root_module.addCMacro("_LARGEFILE64_SOURCE", "");
     }
