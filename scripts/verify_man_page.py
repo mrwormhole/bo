@@ -2,6 +2,11 @@
 """
 Verification tool for tree man page
 Compares 'tree man' output with original groff-formatted doc/tree.1
+
+- Extracts the original `doc/tree.1` from git history
+- Generates the expected groff-formatted output
+- Compares it with the current `tree man` output
+- Reports whether they match byte-for-byte
 """
 import subprocess
 import sys
@@ -11,12 +16,13 @@ def main():
     print("TREE MAN PAGE VERIFICATION")
     print("="*80)
 
-    # Generate original from git
-    print("\n1. Extracting original man page from git...")
+    # Download original from upstream
+    print("\n1. Downloading original man page from upstream...")
     subprocess.run([
-        'git', 'show', 'd501b58ff9cbfd64272c8cbcad0bda36a3fada06:doc/tree.1'
-    ], stdout=open('/tmp/original_tree.1', 'wb'), check=True)
-    print("   ✓ Extracted to /tmp/original_tree.1")
+        'curl', '-sL', '-o', '/tmp/original_tree.1',
+        'https://oldmanprogrammer.net/projects/tree/doc/tree.1'
+    ], check=True)
+    print("   ✓ Downloaded to /tmp/original_tree.1")
 
     # Generate formatted original
     print("\n2. Generating formatted original with groff...")

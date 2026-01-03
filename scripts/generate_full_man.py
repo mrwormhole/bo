@@ -1,8 +1,22 @@
 #!/usr/bin/env python3
 """
 Tool to generate and compare man page formatting
+
+- Downloads the latest `tree.1` from https://oldmanprogrammer.net
+- Formats it with groff
+- Compares with current `tree man` output
+- Shows line-by-line differences
 """
 import subprocess
+
+def download_original_man():
+    """Download original tree.1 from upstream"""
+    print("Downloading original tree.1 from upstream...")
+    subprocess.run([
+        'curl', '-sL', '-o', '/tmp/original_tree.1',
+        'https://oldmanprogrammer.net/projects/tree/doc/tree.1'
+    ], check=True)
+    print("✓ Downloaded to /tmp/original_tree.1\n")
 
 def generate_groff_output(man_file):
     """Generate formatted man page using groff"""
@@ -77,12 +91,34 @@ def show_line_diff(original, current):
         for i in range(len(curr_lines), min(len(curr_lines) + 10, len(orig_lines))):
             print(f"  Line {i+1}: {repr(orig_lines[i][:80])}")
 
-if __name__ == '__main__':
-    original, current = save_outputs()
-    show_line_diff(original, current)
+def write_man_zig(data):
+    """Write formatted man page to src/man.zig"""
+    zig_bytes = ', '.join(f'0x{b:02x}' for b in data)
+    zig_content = f'pub const content: []const u8 = &[_]u8{{ {zig_bytes} }};\n'
 
-    print("\n" + "="*80)
-    print("FILES SAVED:")
-    print("  /tmp/original_formatted.txt - Full formatted man page")
-    print("  /tmp/current_formatted.txt  - Current 'tree man' output")
-    print("="*80)
+    with open('src/man.zig', 'w') as f:
+        f.write(zig_content)
+    print(f"✓ Written src/man.zig ({len(zig_content)} chars)")
+
+if __name__ == '__main__':
+    import sys
+
+    # Download the latest upstream man page
+    download_original_man()
+
+    if len(sys.argv) > 1 and sys.argv[1] == '--write':
+        # Regenerate mode
+        print("Regenerating src/man.zig...")
+        original = generate_groff_output('/tmp/original_tree.1')
+        write_man_zig(original)
+    else:
+        # Compare mode (original behavior)
+        original, current = save_outputs()
+        show_line_diff(original, current)
+
+        print("\n" + "="*80)
+        print("FILES SAVED:")
+        print("  /tmp/original_formatted.txt - Full formatted man page")
+        print("  /tmp/current_formatted.txt  - Current 'tree man' output")
+        print("="*80)
+        print("\nTo regenerate man.zig, run: ./scripts/generate_full_man.py --write")
