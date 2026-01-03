@@ -1,20 +1,3 @@
-/* $Copyright: $
- * Copyright (c) 1996 - 2024 by Steve Baker (steve.baker.llc@gmail.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
 #include "tree.h"
 
 /*
@@ -270,7 +253,6 @@ bool color(mode_t mode, const char *name, bool orphan, bool islink)
       if ((mode & S_IWOTH))
 	if (print_color(COL_OTHER_WRITABLE)) return true;
       return print_color(COL_DIR);
-#ifndef __EMX__
     case S_IFBLK:
       return print_color(COL_BLK);
     case S_IFLNK:
@@ -279,7 +261,6 @@ bool color(mode_t mode, const char *name, bool orphan, bool islink)
     case S_IFDOOR:
       return print_color(COL_DOOR);
   #endif
-#endif
     case S_IFSOCK:
       return print_color(COL_SOCK);
     case S_IFREG:
@@ -318,66 +299,7 @@ const char *getcharset(void)
   cs = getenv("TREE_CHARSET");
   if (cs) return strncpy(buffer,cs,255);
 
-#ifndef __EMX__
   return NULL;
-#else
-  ULONG aulCpList[3],ulListSize,codepage=0;
-
-  if(!getenv("WINDOWID"))
-    if(!DosQueryCp(sizeof aulCpList,aulCpList,&ulListSize))
-      if(ulListSize>=sizeof*aulCpList)
-	codepage=*aulCpList;
-
-  switch(codepage) {
-    case 437: case 775: case 850: case 851: case 852: case 855:
-    case 857: case 860: case 861: case 862: case 863: case 864:
-    case 865: case 866: case 868: case 869: case 891: case 903:
-    case 904:
-      sprintf(buffer,"IBM%03lu",codepage);
-      break;
-    case 367:
-      return"US-ASCII";
-    case 813:
-      return"ISO-8859-7";
-    case 819:
-      return"ISO-8859-1";
-    case 881: case 882: case 883: case 884: case 885:
-      sprintf(buffer,"ISO-8859-%lu",codepage-880);
-      break;
-    case  858: case  924:
-      sprintf(buffer,"IBM%05lu",codepage);
-      break;
-    case 874:
-      return"TIS-620";
-    case 897: case 932: case 942: case 943:
-      return"Shift_JIS";
-    case 912:
-      return"ISO-8859-2";
-    case 915:
-      return"ISO-8859-5";
-    case 916:
-      return"ISO-8859-8";
-    case 949: case 970:
-      return"EUC-KR";
-    case 950:
-      return"Big5";
-    case 954:
-      return"EUC-JP";
-    case 1051:
-      return"hp-roman8";
-    case 1089:
-      return"ISO-8859-6";
-    case 1250: case 1251: case 1253: case 1254: case 1255: case 1256:
-    case 1257: case 1258:
-      sprintf(buffer,"windows-%lu",codepage);
-      break;
-    case 1252:
-      return"ISO-8859-1-Windows-3.1-Latin-1";
-    default:
-      return NULL;
-  }
-  return buffer;
-#endif
 }
 
 void initlinedraw(bool flag)
@@ -443,38 +365,38 @@ void initlinedraw(bool flag)
   };
   
   static const struct linedraw cstable[]={
-    { latin1_3,    "|  ",              "|--",            "&middot;--",     "&copy;",
+    { latin1_3,    "|  ",              "|--",            "&middot;--",
       " [",        " [",               " [",             " [",             " ["       },
-    { iso8859_789, "|  ",              "|--",            "&middot;--",     "(c)",
+    { iso8859_789, "|  ",              "|--",            "&middot;--",
       " [",        " [",               " [",             " [",             " ["       },
-    { shift_jis,   "\204\240 ",        "\204\245",       "\204\244",       "(c)",
+    { shift_jis,   "\204\240 ",        "\204\245",       "\204\244",
       " [",        " [",               " [",             " [",             " ["       },
-    { euc_jp,      "\250\242 ",        "\250\247",       "\250\246",       "(c)",
+    { euc_jp,      "\250\242 ",        "\250\247",       "\250\246",
       " [",        " [",               " [",             " [",             " ["       },
-    { euc_kr,      "\246\242 ",        "\246\247",       "\246\246",       "(c)",
+    { euc_kr,      "\246\242 ",        "\246\247",       "\246\246",
       " [",        " [",               " [",             " [",             " ["       },
-    { iso2022jp,   "\033$B(\"\033(B ", "\033$B('\033(B", "\033$B(&\033(B", "(c)",
+    { iso2022jp,   "\033$B(\"\033(B ", "\033$B('\033(B", "\033$B(&\033(B",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_pc,      "\263  ",           "\303\304\304",   "\300\304\304",   "(c)",
+    { ibm_pc,      "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_ps2,     "\263  ",           "\303\304\304",   "\300\304\304",   "\227",
+    { ibm_ps2,     "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_gr,      "\263  ",           "\303\304\304",   "\300\304\304",   "\270",
+    { ibm_gr,      "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { gb,          "\251\246 ",        "\251\300",       "\251\270",       "(c)",
+    { gb,          "\251\246 ",        "\251\300",       "\251\270",
       " [",        " [",               " [",             " [",             " ["       },
     { utf8,        "\342\224\202\302\240\302\240", "\342\224\234\342\224\200\342\224\200",
-      "\342\224\224\342\224\200\342\224\200", "\302\251",
+      "\342\224\224\342\224\200\342\224\200",
       " \342\216\247", " \342\216\251", " \342\216\250", " \342\216\252",  " {"       },
-    { big5,        "\242x ",           "\242u",          "\242|",          "(c)",
+    { big5,        "\242x ",           "\242u",          "\242|",
       " [",        " [",               " [",             " [",             " ["       },
-    { viscii,      "|  ",              "|--",            "`--",            "\371",
+    { viscii,      "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
-    { koi8ru,      "\201  ",           "\206\200\200",   "\204\200\200",   "\277",
+    { koi8ru,      "\201  ",           "\206\200\200",   "\204\200\200",
       " [",        " [",               " [",             " [",             " ["       },
-    { windows,     "|  ",              "|--",            "`--",            "\251",
+    { windows,     "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
-    { NULL,        "|  ",              "|--",            "`--",            "(c)",
+    { NULL,        "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
   };
   const char**s;

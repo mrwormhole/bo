@@ -1,21 +1,3 @@
-/* $Copyright: $
- * Copyright (c) 1996 - 2024 by Steve Baker (steve.baker.llc@gmail.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #define _GNU_SOURCE
 
 #include <stdlib.h>
@@ -32,23 +14,6 @@
 #include <limits.h>
 #include <pwd.h>
 #include <grp.h>
-#ifdef __EMX__  /* for OS/2 systems */
-#  define INCL_DOSFILEMGR
-#  define INCL_DOSNLS
-#  include <os2.h>
-#  include <sys/nls.h>
-#  include <io.h>
-  /* On many systems stat() function is identical to lstat() function.
-   * But the OS/2 does not support symbolic links and doesn't have lstat() function.
-   */
-#  define         lstat          stat
-#  define         strcasecmp     stricmp
-  /* Following two functions, getcwd() and chdir() don't support for drive letters.
-   * To implement support them, use _getcwd2() and _chdir2().
-   */
-#  define getcwd _getcwd2
-#  define chdir _chdir2
-#endif
 
 #include <locale.h>
 #include <langinfo.h>
@@ -99,9 +64,6 @@ struct _info {
   time_t atime, ctime, mtime;
   dev_t dev, ldev;
   ino_t inode, linode;
-  #ifdef __EMX__
-  long attr;
-  #endif
   char *err;
   const char *tag;
   char **comment;
@@ -146,7 +108,7 @@ struct extensions {
   struct extensions *nxt;
 };
 struct linedraw {
-  const char **name, *vert, *vert_left, *corner, *copy;
+  const char **name, *vert, *vert_left, *corner;
   const char *ctop, *cbot, *cmid, *cext, *csingle;
 };
 struct meta_ids {
@@ -207,11 +169,7 @@ char *gnu_getcwd(void);
 int patmatch(const char *buf, const char *pat, bool isdir);
 void indent(int maxlevel);
 void free_dir(struct _info **);
-#ifdef __EMX__
-char *prot(long);
-#else
 char *prot(mode_t);
-#endif
 char *do_date(time_t);
 void printit(const char *);
 int psize(char *buf, off_t size);
