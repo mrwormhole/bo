@@ -19,7 +19,6 @@ pub fn main() !u8 {
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
-    // $ bo man calls below
     if (args.len == 2 and std.mem.eql(u8, args[1], "man")) {
         try printStdout(man.content);
         return 0;
@@ -30,7 +29,7 @@ pub fn main() !u8 {
     defer allocator.free(c_args);
 
     for (args, 0..) |arg, i| {
-        c_args[i] = @constCast(arg.ptr);
+        c_args[i] = arg.ptr;
     }
 
     const c_argc: c_int = @intCast(args.len);
