@@ -1,28 +1,6 @@
-/* $Copyright: $
- * Copyright (c) 1996 - 2024 by Steve Baker (steve.baker.llc@gmail.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
-
 #include "tree.h"
 
-char *version = "$Version: $ tree v2.2.1 %s 1996 - 2026 by Steve Baker, Thomas Moore, Francesc Rocher, Florian Sesser, Kyosuke Tokoro $";
-char *hversion= "\t\t tree v2.2.1 %s 1996 - 2026 by Steve Baker and Thomas Moore <br>\n"
-		"\t\t HTML output hacked and copyleft %s 1998 by Francesc Rocher <br>\n"
-		"\t\t JSON output hacked and copyleft %s 2014 by Florian Sesser <br>\n"
-		"\t\t Charset support %s 2001 by Kyosuke Tokoro\n";
+char *version = "bo (tree) v0.0.1";
 
 /* Globals */
 bool dflag, lflag, pflag, sflag, Fflag, aflag, fflag, uflag, gflag;
@@ -623,10 +601,7 @@ int tree_main(int argc, char **argv)
 
 void print_version(int nl)
 {
-  char buf[PATH_MAX], *v;
-  v = version+12;
-  sprintf(buf, "%.*s%s", (int)strlen(v)-2, v, nl?"\n":"");
-  fprintf(outfile, buf, linedraw->copy);
+  fprintf(outfile, "%s%s", version, nl?"\n":"");
 }
 
 void setoutput(const char *filename)

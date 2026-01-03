@@ -1,29 +1,19 @@
 const std = @import("std");
 
-// Note: Windows native is not supported (tree requires POSIX).
+// Note: Windows native is not supported (tree.c requires POSIX).
 // Use Cygwin for Windows builds.
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const bin_name = switch (target.result.os.tag) {
-        .windows => "tree.exe",
-        .openbsd => "colortree",
-        else => "tree",
-    };
-    const exe = createExecutable(b, target, optimize, bin_name);
+    const exe = createExecutable(b, target, optimize);
     b.installArtifact(exe);
 
     makeRunStep(b, exe);
 }
 
-fn createExecutable(
-    b: *std.Build,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    bin_name: []const u8,
-) *std.Build.Step.Compile {
+fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
     const common_sources = [_][]const u8{
         "tree.c",
         "list.c",
@@ -55,7 +45,7 @@ fn createExecutable(
     }
 
     const exe = b.addExecutable(.{
-        .name = bin_name,
+        .name = "bo",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/main.zig"),
             .target = target,

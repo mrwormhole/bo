@@ -1,20 +1,3 @@
-/* $Copyright: $
- * Copyright (c) 1996 - 2024 by Steve Baker (steve.baker.llc@gmail.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
 #include "tree.h"
 
 /*
@@ -382,38 +365,38 @@ void initlinedraw(bool flag)
   };
   
   static const struct linedraw cstable[]={
-    { latin1_3,    "|  ",              "|--",            "&middot;--",     "&copy;",
+    { latin1_3,    "|  ",              "|--",            "&middot;--",
       " [",        " [",               " [",             " [",             " ["       },
-    { iso8859_789, "|  ",              "|--",            "&middot;--",     "(c)",
+    { iso8859_789, "|  ",              "|--",            "&middot;--",
       " [",        " [",               " [",             " [",             " ["       },
-    { shift_jis,   "\204\240 ",        "\204\245",       "\204\244",       "(c)",
+    { shift_jis,   "\204\240 ",        "\204\245",       "\204\244",
       " [",        " [",               " [",             " [",             " ["       },
-    { euc_jp,      "\250\242 ",        "\250\247",       "\250\246",       "(c)",
+    { euc_jp,      "\250\242 ",        "\250\247",       "\250\246",
       " [",        " [",               " [",             " [",             " ["       },
-    { euc_kr,      "\246\242 ",        "\246\247",       "\246\246",       "(c)",
+    { euc_kr,      "\246\242 ",        "\246\247",       "\246\246",
       " [",        " [",               " [",             " [",             " ["       },
-    { iso2022jp,   "\033$B(\"\033(B ", "\033$B('\033(B", "\033$B(&\033(B", "(c)",
+    { iso2022jp,   "\033$B(\"\033(B ", "\033$B('\033(B", "\033$B(&\033(B",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_pc,      "\263  ",           "\303\304\304",   "\300\304\304",   "(c)",
+    { ibm_pc,      "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_ps2,     "\263  ",           "\303\304\304",   "\300\304\304",   "\227",
+    { ibm_ps2,     "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { ibm_gr,      "\263  ",           "\303\304\304",   "\300\304\304",   "\270",
+    { ibm_gr,      "\263  ",           "\303\304\304",   "\300\304\304",
       " [",        " [",               " [",             " [",             " ["       },
-    { gb,          "\251\246 ",        "\251\300",       "\251\270",       "(c)",
+    { gb,          "\251\246 ",        "\251\300",       "\251\270",
       " [",        " [",               " [",             " [",             " ["       },
     { utf8,        "\342\224\202\302\240\302\240", "\342\224\234\342\224\200\342\224\200",
-      "\342\224\224\342\224\200\342\224\200", "\302\251",
+      "\342\224\224\342\224\200\342\224\200",
       " \342\216\247", " \342\216\251", " \342\216\250", " \342\216\252",  " {"       },
-    { big5,        "\242x ",           "\242u",          "\242|",          "(c)",
+    { big5,        "\242x ",           "\242u",          "\242|",
       " [",        " [",               " [",             " [",             " ["       },
-    { viscii,      "|  ",              "|--",            "`--",            "\371",
+    { viscii,      "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
-    { koi8ru,      "\201  ",           "\206\200\200",   "\204\200\200",   "\277",
+    { koi8ru,      "\201  ",           "\206\200\200",   "\204\200\200",
       " [",        " [",               " [",             " [",             " ["       },
-    { windows,     "|  ",              "|--",            "`--",            "\251",
+    { windows,     "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
-    { NULL,        "|  ",              "|--",            "`--",            "(c)",
+    { NULL,        "|  ",              "|--",            "`--",
       " [",        " [",               " [",             " [",             " ["       },
   };
   const char**s;
