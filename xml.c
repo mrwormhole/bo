@@ -1,29 +1,15 @@
-/* $Copyright: $
- * Copyright (c) 1996 - 2026 by Steve Baker (steve.baker.llc@gmail.com)
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
- */
 #include "tree.h"
 
-extern struct Flags flag;
+
+extern bool dflag, pflag, sflag, uflag, gflag;
+extern bool Dflag, inodeflag, devflag, cflag, duflag;
+extern bool noindent;
+
 extern const char *charset;
 extern const mode_t ifmt[];
 extern const char *ftype[];
 
 extern FILE *outfile;
-extern char *_nl;
 
 /*
 <tree>
@@ -50,33 +36,26 @@ extern char *_nl;
 
 void xml_indent(int maxlevel)
 {
-  char *spaces[] = {"    ", "   ", "  ", " ", ""};
-  int clvl = flag.compress_indent + (flag.remove_space? 1 : 0);
   int i;
-
-  if (flag.noindent) return;
-  fprintf(outfile, "%s", spaces[clvl]);
+  
+  fprintf(outfile, "  ");
   for(i=0; i<maxlevel; i++)
-    fprintf(outfile, "%s", spaces[clvl]);
+    fprintf(outfile, "  ");
 }
 
 void xml_fillinfo(struct _info *ent)
 {
   #ifdef __USE_FILE_OFFSET64
-  if (flag.inode) fprintf(outfile," inode=\"%lld\"",(long long)ent->inode);
+  if (inodeflag) fprintf(outfile," inode=\"%lld\"",(long long)ent->inode);
   #else
-  if (flag.inode) fprintf(outfile," inode=\"%ld\"",(long int)ent->inode);
+  if (inodeflag) fprintf(outfile," inode=\"%ld\"",(long int)ent->inode);
   #endif
-  if (flag.dev) fprintf(outfile, " dev=\"%d\"", (int)ent->dev);
-  #ifdef __EMX__
-  if (flag.p) fprintf(outfile, " mode=\"%04o\" prot=\"%s\"",ent->attr, prot(ent->attr));
-  #else
-  if (flag.p) fprintf(outfile, " mode=\"%04o\" prot=\"%s\"", ent->mode & (S_IRWXU|S_IRWXG|S_IRWXO|S_ISUID|S_ISGID|S_ISVTX), prot(ent->mode));
-  #endif
-  if (flag.u) fprintf(outfile, " user=\"%s\"", uidtoname(ent->uid));
-  if (flag.g) fprintf(outfile, " group=\"%s\"", gidtoname(ent->gid));
-  if (flag.s) fprintf(outfile, " size=\"%lld\"", (long long int)(ent->size));
-  if (flag.D) fprintf(outfile, " time=\"%s\"", do_date(flag.c? ent->ctime : ent->mtime));
+  if (devflag) fprintf(outfile, " dev=\"%d\"", (int)ent->dev);
+  if (pflag) fprintf(outfile, " mode=\"%04o\" prot=\"%s\"", ent->mode & (S_IRWXU|S_IRWXG|S_IRWXO|S_ISUID|S_ISGID|S_ISVTX), prot(ent->mode));
+  if (uflag) fprintf(outfile, " user=\"%s\"", uidtoname(ent->uid));
+  if (gflag) fprintf(outfile, " group=\"%s\"", gidtoname(ent->gid));
+  if (sflag) fprintf(outfile, " size=\"%lld\"", (long long int)(ent->size));
+  if (Dflag) fprintf(outfile, " time=\"%s\"", do_date(cflag? ent->ctime : ent->mtime));
 }
 
 void xml_intro(void)
@@ -90,7 +69,7 @@ void xml_intro(void)
 
 void xml_outtro(void)
 {
-  fprintf(outfile,"</tree>%s", _nl);
+  fprintf(outfile,"</tree>\n");
 }
 
 int xml_printinfo(char *dirname, struct _info *file, int level)
@@ -100,7 +79,7 @@ int xml_printinfo(char *dirname, struct _info *file, int level)
   mode_t mt;
   int t;
 
-  if (!flag.noindent) xml_indent(level);
+  if (!noindent) xml_indent(level);
 
   if (file != NULL) {
     if (file->lnk) mt = file->mode & S_IFMT;
@@ -109,8 +88,7 @@ int xml_printinfo(char *dirname, struct _info *file, int level)
 
   for(t=0;ifmt[t];t++)
     if (ifmt[t] == mt) break;
-  if (file) file->tag = ftype[t];
-  fprintf(outfile,"<%s", ftype[t]);
+  fprintf(outfile,"<%s", (file->tag = ftype[t]));
 
   return 0;
 }
@@ -125,22 +103,21 @@ int xml_printfile(char *dirname, char *filename, struct _info *file, int descend
   html_encode(outfile, filename);
   fputc('"',outfile);
 
-  if (file) {
-    if (file->comment) {
-      fprintf(outfile, " info=\"");
-      for(i=0; file->comment[i]; i++) {
-        html_encode(outfile, file->comment[i]);
-        if (file->comment[i+1]) fprintf(outfile, "%s", _nl);
-      }
-      fputc('"', outfile);
+  if (file && file->comment) {
+    fprintf(outfile, " info=\"");
+    for(i=0; file->comment[i]; i++) {
+      html_encode(outfile, file->comment[i]);
+      if (file->comment[i+1]) fprintf(outfile, "\n");
     }
-    if (file->lnk) {
-      fprintf(outfile, " target=\"");
-      html_encode(outfile,file->lnk);
-      fputc('"',outfile);
-    }
-    xml_fillinfo(file);
+    fputc('"', outfile);
   }
+
+  if (file && file->lnk) {
+    fprintf(outfile, " target=\"");
+    html_encode(outfile,file->lnk);
+    fputc('"',outfile);
+  }
+  if (file) xml_fillinfo(file);
   fputc('>',outfile);
 
   return 1;
@@ -157,15 +134,15 @@ void xml_newline(struct _info *file, int level, int postdir, int needcomma)
 {
   UNUSED(file);UNUSED(level);UNUSED(needcomma);
 
-  if (postdir >= 0) fprintf(outfile, "%s", _nl);
+  if (postdir >= 0) fprintf(outfile, "\n");
 }
 
 void xml_close(struct _info *file, int level, int needcomma)
 {
   UNUSED(needcomma);
 
-  if (!flag.noindent && level >= 0) xml_indent(level);
-  fprintf(outfile,"</%s>%s", file? file->tag : "unknown", flag.noindent? "" : _nl);
+  if (!noindent && level >= 0) xml_indent(level);
+  fprintf(outfile,"</%s>%s", file? file->tag : "unknown", noindent? "" : "\n");
 }
 
 
@@ -173,13 +150,9 @@ void xml_report(struct totals tot)
 {
   extern char *_nl;
 
-  xml_indent(0); fprintf(outfile,"<report>%s", _nl);
-  if (flag.du) {
-    xml_indent(1); fprintf(outfile,"<size>%lld</size>%s", (long long int)tot.size, _nl);
-  }
-  xml_indent(1); fprintf(outfile,"<directories>%ld</directories>%s", tot.dirs, _nl);
-  if (!flag.d) {
-    xml_indent(1); fprintf(outfile,"<files>%ld</files>%s", tot.files, _nl);
-  }
-  xml_indent(0); fprintf(outfile,"</report>%s", _nl);
+  fprintf(outfile,"%s<report>%s",noindent?"":"  ", _nl);
+  if (duflag) fprintf(outfile,"%s<size>%lld</size>%s", noindent?"":"    ", (long long int)tot.size, _nl);
+  fprintf(outfile,"%s<directories>%ld</directories>%s", noindent?"":"    ", tot.dirs, _nl);
+  if (!dflag) fprintf(outfile,"%s<files>%ld</files>%s", noindent?"":"    ", tot.files, _nl);
+  fprintf(outfile,"%s</report>%s",noindent?"":"  ", _nl);
 }

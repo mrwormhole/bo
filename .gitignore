@@ -1,5 +1,10 @@
 # Ignore the things we would normally "clean":
 *.o
 tree
+bo
 *~
 /work
+
+# Zig build artifacts
+.zig-cache/
+zig-out/
