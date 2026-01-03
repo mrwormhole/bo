@@ -58,15 +58,10 @@ zig build -Dtarget=x86_64-freebsd   # Build FreeBSD binary
 ```bash
 zig build run -- --version
 zig build run -- -L 2
+zig build run -- man
 ```
 
-## Viewing Documentation
-
-```bash
-bo man # Display the manual page
-```
-
-## Old Todos
+## Old Todos of Tree
 
 Should do:
 
