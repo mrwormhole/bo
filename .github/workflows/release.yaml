@@ -34,10 +34,10 @@ jobs:
       - name: Package
         run: |
           cd zig-out/bin
-          tar -czf ../../bo-${{ matrix.target }}.tar.gz bo
+          tar -czf ../../bo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz bo
           cd ../..
 
       - name: Upload Release Assets
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload ${{ github.ref_name }} bo-${{ matrix.target }}.tar.gz
+        run: gh release upload ${{ github.ref_name }} bo-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
