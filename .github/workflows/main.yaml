@@ -23,5 +23,8 @@ jobs:
       - name: Fmt
         run: zig fmt --check .
 
+      - name: Test
+        run: zig build test --summary all
+
       - name: Build
         run: zig build
