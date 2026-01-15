@@ -11,8 +11,8 @@
 //! - Fractional parts beginning with '0' have special comparison rules
 //!
 //! References:
-//! - Original C implementation: libiberty/strverscmp.c
-//! - GNU C Library documentation
+//! - Original C implementation: https://chromium.googlesource.com/native_client/nacl-gcc/+/455063d/libiberty/strverscmp.c
+//! - GNU C Library documentation https://github.com/bminor/glibc/blob/master/string/strverscmp.c
 
 const std = @import("std");
 const testing = std.testing;
@@ -88,7 +88,7 @@ inline fn getSymbolType(c: u8) u8 {
 ///
 /// Exported with C calling convention for interop with C code
 export fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
-    // Fast path: identical pointers
+    // Identical pointers
     if (s1 == s2) return 0;
 
     var p1: [*:0]const u8 = s1;
@@ -129,7 +129,6 @@ export fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
     const result_idx = (state << 2) | c2_type;
     const result = result_type[result_idx];
 
-    // Process result
     if (result == CMP) {
         // CMP: return character difference
         return @intCast(diff);
@@ -141,26 +140,24 @@ export fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
             p2 += 1;
         }
         return if (std.ascii.isDigit(p2[0])) -1 else @intCast(diff);
-    } else {
-        // Direct result: -1, 0, or +1
-        return result;
     }
+    return result;
 }
 
 test "identical strings" {
-    try testing.expectEqual(@as(c_int, 0), strverscmp("test", "test"));
-    try testing.expectEqual(@as(c_int, 0), strverscmp("", ""));
-    try testing.expectEqual(@as(c_int, 0), strverscmp("123", "123"));
+    try testing.expect(strverscmp("test", "test") == 0);
+    try testing.expect(strverscmp("", "") == 0);
+    try testing.expect(strverscmp("123", "123") == 0);
+    try testing.expect(strverscmp("no digit", "no digit") == 0);
+    try testing.expect(strverscmp("a", "a") == 0);
 }
 
 test "no digits behaves like strcmp" {
-    try testing.expectEqual(@as(c_int, 0), strverscmp("no digit", "no digit"));
     try testing.expect(strverscmp("abc", "abd") < 0);
     try testing.expect(strverscmp("abd", "abc") > 0);
 }
 
 test "numeric comparison" {
-    // 99 < 100
     try testing.expect(strverscmp("item#99", "item#100") < 0);
     try testing.expect(strverscmp("file99.txt", "file100.txt") < 0);
     try testing.expect(strverscmp("9", "10") < 0);
@@ -168,37 +165,31 @@ test "numeric comparison" {
 }
 
 test "fractional vs integral" {
-    // Integral > fractional (leading zero)
     try testing.expect(strverscmp("alpha1", "alpha001") > 0);
     try testing.expect(strverscmp("file1", "file01") > 0);
 }
 
 test "fractional parts" {
-    // Two fractional parts
     try testing.expect(strverscmp("part1_f012", "part1_f01") > 0);
     try testing.expect(strverscmp("0.123", "0.12") > 0);
 }
 
 test "leading zeroes only" {
-    // Leading zeroes only: longer is less
     try testing.expect(strverscmp("foo.009", "foo.0") < 0);
     try testing.expect(strverscmp("foo.0009", "foo.009") < 0);
 }
 
 test "empty strings" {
-    try testing.expectEqual(@as(c_int, 0), strverscmp("", ""));
     try testing.expect(strverscmp("a", "") > 0);
     try testing.expect(strverscmp("", "a") < 0);
 }
 
 test "one character" {
-    try testing.expectEqual(@as(c_int, 0), strverscmp("a", "a"));
     try testing.expect(strverscmp("a", "b") < 0);
     try testing.expect(strverscmp("b", "a") > 0);
 }
 
 test "real-world filenames" {
-    // Common version sorting scenarios
     try testing.expect(strverscmp("file1.txt", "file2.txt") < 0);
     try testing.expect(strverscmp("file9.txt", "file10.txt") < 0);
     try testing.expect(strverscmp("file10.txt", "file9.txt") > 0);
@@ -219,4 +210,96 @@ test "mixed alphanumeric" {
     try testing.expect(strverscmp("a1b2c3", "a1b2c10") < 0);
     try testing.expect(strverscmp("test-1.2.3", "test-1.2.10") < 0);
     try testing.expect(strverscmp("prefix99suffix", "prefix100suffix") < 0);
+}
+
+test "pointer equality fast path" {
+    const s = "test";
+    try testing.expect(strverscmp(s, s) == 0);
+}
+
+test "pure leading zeros (S_Z state)" {
+    try testing.expect(strverscmp("foo.0", "foo.00") > 0);
+    try testing.expect(strverscmp("foo.000", "foo.0") < 0);
+    try testing.expect(strverscmp("a0", "a00") > 0);
+    try testing.expect(strverscmp("a00", "a0") < 0);
+    try testing.expect(strverscmp("test.0000", "test.000") < 0);
+}
+
+test "numbers at string start" {
+    try testing.expect(strverscmp("123abc", "124abc") < 0);
+    try testing.expect(strverscmp("99start", "100start") < 0);
+    try testing.expect(strverscmp("0123", "0124") < 0);
+    try testing.expect(strverscmp("1", "2") < 0);
+    try testing.expect(strverscmp("9xyz", "10xyz") < 0);
+}
+
+test "explicit length difference (LEN case)" {
+    try testing.expect(strverscmp("num123", "num1234") < 0);
+    try testing.expect(strverscmp("num1234", "num123") > 0);
+    try testing.expect(strverscmp("123", "1234") < 0);
+    try testing.expect(strverscmp("1234", "123") > 0);
+    try testing.expect(strverscmp("x99999", "x999999") < 0);
+}
+
+test "pure fractional numbers" {
+    try testing.expect(strverscmp("01", "02") < 0);
+    try testing.expect(strverscmp("001", "002") < 0);
+    try testing.expect(strverscmp("0", "00") > 0); // S_Z: shorter wins
+    try testing.expect(strverscmp("00", "0") < 0); // S_Z: longer loses
+    try testing.expect(strverscmp("012", "013") < 0);
+}
+
+test "state transition boundaries" {
+    try testing.expect(strverscmp("a1b0c", "a1b0d") < 0);
+    try testing.expect(strverscmp("x1y01z", "x1y01z") == 0);
+    try testing.expect(strverscmp("m9n08p", "m9n08q") < 0);
+    try testing.expect(strverscmp("a1b2c3", "a1b2c3") == 0);
+    try testing.expect(strverscmp("a1b2c3", "a1b2c4") < 0);
+}
+
+test "zero vs non-zero digit at transition" {
+    try testing.expect(strverscmp("test1x", "test01x") > 0);
+    try testing.expect(strverscmp("test01x", "test1x") < 0);
+    try testing.expect(strverscmp("a0b", "a00b") > 0);
+    try testing.expect(strverscmp("prefix1", "prefix01") > 0);
+}
+
+test "very long numbers" {
+    try testing.expect(strverscmp("12345678901234567890", "12345678901234567891") < 0);
+    try testing.expect(strverscmp("999999999", "1000000000") < 0);
+    try testing.expect(strverscmp("123456789012345", "123456789012345") == 0);
+    try testing.expect(strverscmp("99999999999999999", "100000000000000000") < 0);
+}
+
+test "fractional with different zero prefixes" {
+    try testing.expect(strverscmp("x001", "x01") < 0);
+    try testing.expect(strverscmp("x0001", "x001") < 0);
+    try testing.expect(strverscmp("x01", "x001") > 0);
+    try testing.expect(strverscmp("ver0012", "ver012") < 0);
+}
+
+test "single digit edge cases" {
+    try testing.expect(strverscmp("0", "1") < 0);
+    try testing.expect(strverscmp("9", "0") > 0);
+    try testing.expect(strverscmp("0", "0") == 0);
+    try testing.expect(strverscmp("1", "9") < 0);
+    try testing.expect(strverscmp("5", "5") == 0);
+}
+
+test "mixed integral and fractional sequences" {
+    try testing.expect(strverscmp("1.01", "1.1") < 0);
+    try testing.expect(strverscmp("10.001", "10.01") < 0);
+    try testing.expect(strverscmp("01a2b", "01a10b") < 0);
+}
+
+test "numbers at string end" {
+    try testing.expect(strverscmp("test99", "test100") < 0);
+    try testing.expect(strverscmp("end1", "end2") < 0);
+    try testing.expect(strverscmp("suffix001", "suffix1") < 0);
+}
+
+test "repeated zero patterns" {
+    try testing.expect(strverscmp("a00b", "a0b") < 0);
+    try testing.expect(strverscmp("0a0b", "0a00b") > 0);
+    try testing.expect(strverscmp("x000y", "x0000y") > 0);
 }
