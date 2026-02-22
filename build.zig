@@ -73,7 +73,7 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
     const os_tag = target.result.os.tag;
     switch (os_tag) {
         .linux => {
-            exe.root_module.addCMacro("_GNU_SOURCE", "");
+            exe.root_module.addCMacro("_DEFAULT_SOURCE", "");
         },
         .solaris, .illumos => {
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
