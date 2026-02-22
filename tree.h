@@ -1,5 +1,3 @@
-#define _GNU_SOURCE
-
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
@@ -261,8 +259,5 @@ void printcomment(size_t line, size_t lines, char *s);
 /* list.c */
 void new_emit_unix(char **dirname, bool needfulltree);
 
-
-/* We use the strverscmp.c file if we're not linux: */
-#if !defined(__linux__) || defined(__ANDROID__)
-int strverscmp (const char *s1, const char *s2);
-#endif
+/* strverscmp.zig */
+int strverscmp(const char *s1, const char *s2);
