@@ -1,9 +1,15 @@
 const std = @import("std");
 
 const man = @import("man.zig");
+const strverscmp = @import("strverscmp.zig");
 
 // Import C main fn
 extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
+
+// Include tests from imported modules
+test {
+    _ = strverscmp;
+}
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;

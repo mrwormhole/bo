@@ -22,7 +22,6 @@
 | `INFO_PATH` | Default info file path | "/usr/share/finfo/global_info" | tree.h |
 | `MB_CUR_MAX` | Max bytes in multibyte char | (system) | tree.c |
 | `__USE_FILE_OFFSET64` | Large file support (64-bit offsets) | - | json.c, xml.c, tree.c |
-| `_GNU_SOURCE` | Enable GNU extensions | - | tree.h |
 
 ## Utility Macros
 

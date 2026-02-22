@@ -11,6 +11,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     makeRunStep(b, exe);
+    makeTestStep(b, target, optimize);
 }
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
@@ -28,19 +29,11 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "html.c",
     };
 
-    var sources_buf: [12][]const u8 = undefined;
+    var sources_buf: [11][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
         sources_buf[num_sources] = src;
-        num_sources += 1;
-    }
-
-    // Conditionally include strverscmp.c
-    // Only include strverscmp.c if not Linux or if Android
-    const needs_strverscmp = target.result.os.tag != .linux or target.result.abi == .android;
-    if (needs_strverscmp) {
-        sources_buf[num_sources] = "strverscmp.c";
         num_sources += 1;
     }
 
@@ -80,7 +73,7 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
     const os_tag = target.result.os.tag;
     switch (os_tag) {
         .linux => {
-            exe.root_module.addCMacro("_GNU_SOURCE", "");
+            exe.root_module.addCMacro("_DEFAULT_SOURCE", "");
         },
         .solaris, .illumos => {
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
@@ -105,4 +98,19 @@ fn makeRunStep(b: *std.Build, exe: *std.Build.Step.Compile) void {
 
     const run_step = b.step("run", "Run the tree command");
     run_step.dependOn(&run_cmd.step);
+}
+
+fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+    const tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    const test_cmd = b.addRunArtifact(tests);
+
+    const test_step = b.step("test", "Run unit tests");
+    test_step.dependOn(&test_cmd.step);
 }
