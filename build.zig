@@ -62,6 +62,19 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     });
     addPreprocessorDefines(exe, target);
     exe.linkLibC();
+
+    // Compile our strverscmp implementation as a separate object so the
+    // symbol is always available to the C code, on every platform.
+    const strverscmp_obj = b.addObject(.{
+        .name = "strverscmp",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/strverscmp.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    exe.addObject(strverscmp_obj);
+
     return exe;
 }
 
