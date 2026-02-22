@@ -12,7 +12,6 @@
 //!
 //! References:
 //! - Original C implementation: https://chromium.googlesource.com/native_client/nacl-gcc/+/455063d/libiberty/strverscmp.c
-//! - GNU C Library documentation https://github.com/bminor/glibc/blob/master/string/strverscmp.c
 
 const std = @import("std");
 const testing = std.testing;
@@ -22,10 +21,6 @@ const S_N: u8 = 0x0; // Normal: comparing non-digit characters
 const S_I: u8 = 0x4; // Integral: comparing integral numeric parts
 const S_F: u8 = 0x8; // Fractional: comparing fractional numeric parts (start with 0)
 const S_Z: u8 = 0xC; // Zeroes: comparing fractional parts with only leading zeroes
-
-// Result types for comparison
-const CMP: i8 = 2; // Return character difference
-const LEN: i8 = 3; // Compare by length of numeric sequences
 
 // State transition table (1D array indexed by combined state|symbol value)
 // Symbol encoding: (c == '0') + (isdigit(c) != 0)
@@ -46,21 +41,25 @@ const next_state = [16]u8{
     S_N, S_F, S_Z, S_Z,
 };
 
-// Result type lookup table
+// Result types for comparison
+const CMP: i8 = 2; // Return character difference
+const LEN: i8 = 3; // Compare by length of numeric sequences
+
+// Result types lookup table
 // Indexed by: (state << 2) | c2_symbol_type
 // Returns: CMP (2), LEN (3), or direct result (-1, 0, +1)
 // For each state (S_N, S_I, S_F, S_Z), there are 16 combinations of (c1_type, c2_type)
-const result_type = [_]i8{
-    // S_N (state bits 00)
+const result_types = [_]i8{
+    // S_N
     CMP, CMP, CMP, CMP, CMP, LEN, CMP, CMP,
     CMP, CMP, CMP, CMP, CMP, CMP, CMP, CMP,
-    // S_I (state bits 01)
+    // S_I
     CMP, -1,  -1,  CMP, 1,   LEN, LEN, CMP,
     1,   LEN, LEN, CMP, CMP, CMP, CMP, CMP,
-    // S_F (state bits 10)
+    // S_F
     CMP, CMP, CMP, CMP, CMP, LEN, CMP, CMP,
     CMP, CMP, CMP, CMP, CMP, CMP, CMP, CMP,
-    // S_Z (state bits 11)
+    // S_Z
     CMP, 1,   1,   CMP, -1,  CMP, CMP, CMP,
     -1,  CMP, CMP, CMP,
 };
@@ -96,44 +95,40 @@ export fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
 
     var c1 = p1[0];
     var c2 = p2[0];
+    var diff: i32 = @as(i32, c1) - @as(i32, c2);
+
+    // Make state based on first character
+    var state: u8 = S_N | getSymbolType(c1);
+
     p1 += 1;
     p2 += 1;
 
-    // Initialize state based on first character
-    // state = S_N | ((c1 == '0') + (isdigit(c1) != 0))
-    var state: u8 = S_N | getSymbolType(c1);
-
-    // Main comparison loop: continue while characters are equal and not at end
-    var diff: i32 = @as(i32, c1) - @as(i32, c2);
+    // Continue while characters are equal and not at end
     while (diff == 0 and c1 != 0) {
         // Transition to next state
-        // In C: state = next_state[state]
         // state is the combined value (state_bits | symbol_type)
         state = next_state[state];
 
         // Read next characters
         c1 = p1[0];
         c2 = p2[0];
-        p1 += 1;
-        p2 += 1;
+        diff = @as(i32, c1) - @as(i32, c2);
 
-        // Update state with c1 type for next iteration
+        // Update state with c1
         state |= getSymbolType(c1);
 
-        diff = @as(i32, c1) - @as(i32, c2);
+        p1 += 1;
+        p2 += 1;
     }
 
     // Determine result based on final state and c2 type
-    // In C: state = result_type[state << 2 | (((c2 == '0') + (isdigit (c2) != 0)))]
     const c2_type = getSymbolType(c2);
-    const result_idx = (state << 2) | c2_type;
-    const result = result_type[result_idx];
+    const index = (state << 2) | c2_type;
+    const result = result_types[index];
 
-    if (result == CMP) {
-        // CMP: return character difference
-        return @intCast(diff);
-    } else if (result == LEN) {
-        // LEN: compare by length of numeric sequences
+    if (result == CMP) { // return character difference
+        return diff;
+    } else if (result == LEN) { // compare by length of numeric sequences
         while (std.ascii.isDigit(p1[0])) {
             if (!std.ascii.isDigit(p2[0])) return 1;
             p1 += 1;
