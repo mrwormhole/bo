@@ -123,6 +123,198 @@ export var xpattern: [4096]u8 = std.mem.zeroes([4096]u8);
 export var mb_cur_max: c_int = 0;
 
 // ----------------------------------------------------------------------------
+// Memory / directory utility functions migrated from tree.c (Phase 3)
+//
+// All four are called from other C files, so they keep export + callconv(.C).
+// xmalloc/xrealloc mirror the C originals: exit on allocation failure so
+// callers never need to handle a null return.
+// ----------------------------------------------------------------------------
+
+fn oom() noreturn {
+    std.debug.print("tree: virtual memory exhausted.\n", .{});
+    std.process.exit(1);
+}
+
+export fn xmalloc(size: usize) ?*anyopaque {
+    return c.malloc(size) orelse oom();
+}
+
+export fn xrealloc(ptr: ?*anyopaque, size: usize) ?*anyopaque {
+    return c.realloc(ptr, size) orelse oom();
+}
+
+// Free a null-terminated array of _info pointers (and each entry's strings).
+export fn free_dir(d: [*c]?*c.struct__info) void {
+    var i: usize = 0;
+    while (d[i]) |entry| : (i += 1) {
+        c.free(@ptrCast(entry.name));
+        if (entry.lnk != null) c.free(@ptrCast(entry.lnk));
+        c.free(@ptrCast(entry));
+    }
+    c.free(@ptrCast(d));
+}
+
+// Grow-and-retry wrapper around getcwd(); caller owns the returned buffer.
+export fn gnu_getcwd() [*c]u8 {
+    var size: usize = 100;
+    var buf: [*c]u8 = @ptrCast(xmalloc(size));
+    while (true) {
+        if (c.getcwd(buf, size) != null) return buf;
+        size *= 2;
+        c.free(@ptrCast(buf));
+        buf = @ptrCast(xmalloc(size));
+    }
+}
+
+// ----------------------------------------------------------------------------
+// Pattern matching functions migrated from tree.c (Phase 4 — idiomatic Zig)
+//
+// patmatch/patignore/patinclude are all declared in tree.h, so the export
+// symbols satisfy any remaining C callers (e.g. filter.c calls patmatch).
+// ----------------------------------------------------------------------------
+
+fn condLower(ch: u8) u8 {
+    return if (ignorecase) std.ascii.toLower(ch) else ch;
+}
+
+/// Glob pattern match — idiomatic Zig core (slices, no pointer arithmetic).
+/// Returns 1 on match, 0 on mismatch, -1 on pattern syntax error.
+fn patMatchSlice(buf_in: []const u8, pat_in: []const u8, isdir: bool) c_int {
+    // '|' alternation: try left side, then right side.
+    if (std.mem.indexOfScalar(u8, pat_in, '|')) |bar| {
+        if (bar == 0 or bar == pat_in.len - 1) return -1;
+        const left = patMatchSlice(buf_in, pat_in[0..bar], isdir);
+        if (left != 0) return left;
+        return patMatchSlice(buf_in, pat_in[bar + 1 ..], isdir);
+    }
+
+    var buf = buf_in;
+    var pat = pat_in;
+    var match: c_int = 1;
+    var pprev: u8 = 0;
+
+    while (pat.len > 0 and match > 0) {
+        switch (pat[0]) {
+            '[' => {
+                pat = pat[1..]; // consume '['
+                // Negated class [^...]: hit value 0 means "found → no match".
+                // Normal class  [...]:  hit value 1 means "found → match".
+                const hit: c_int = if (pat.len > 0 and pat[0] == '^') blk: {
+                    pat = pat[1..]; // consume '^'
+                    break :blk 0;
+                } else blk: {
+                    match = 0; // unmatched until we find a class member
+                    break :blk 1;
+                };
+                inner: while (pat.len > 0 and pat[0] != ']') {
+                    if (pat[0] == '\\') pat = pat[1..];
+                    if (pat.len == 0) return -1; // unterminated escape
+                    if (pat.len > 1 and pat[1] == '-') {
+                        const lo = pat[0];
+                        pat = pat[2..]; // consume lo and '-'
+                        if (pat.len > 0 and pat[0] == '\\') pat = pat[1..];
+                        if (buf.len > 0 and
+                            condLower(buf[0]) >= condLower(lo) and
+                            condLower(buf[0]) <= condLower(pat[0]))
+                        {
+                            match = hit;
+                        }
+                        if (pat.len == 0) break :inner; // range end was last char
+                    } else {
+                        if (buf.len > 0 and condLower(buf[0]) == condLower(pat[0]))
+                            match = hit;
+                    }
+                    pat = pat[1..];
+                }
+                if (pat.len == 0) return -1; // unterminated '['
+                // pat[0] is ']'; outer loop will advance past it.
+                if (buf.len > 0) buf = buf[1..];
+            },
+            '*' => {
+                pat = pat[1..]; // consume first '*'
+                if (pat.len == 0) {
+                    // Trailing '*' matches any name without a '/'.
+                    return @intFromBool(std.mem.indexOfScalar(u8, buf, '/') == null);
+                }
+                match = 0;
+                if (pat[0] == '*') {
+                    pat = pat[1..]; // consume second '*'
+                    if (pat.len == 0) return 1; // trailing '**' matches everything
+                    while (buf.len > 0) {
+                        const m = patMatchSlice(buf, pat, isdir);
+                        match = m;
+                        if (m != 0) break;
+                        // '**' between two '/'s may match an empty path component.
+                        if (pprev == '/' and pat[0] == '/' and pat.len > 1) {
+                            const m2 = patMatchSlice(buf, pat[1..], isdir);
+                            if (m2 != 0) return m2;
+                        }
+                        buf = buf[1..];
+                        while (buf.len > 0 and buf[0] != '/') buf = buf[1..];
+                    }
+                } else {
+                    // Single '*': match any sequence not containing '/'.
+                    while (buf.len > 0) {
+                        const m = patMatchSlice(buf, pat, isdir);
+                        buf = buf[1..]; // mirrors C's buf++ in loop condition
+                        if (m != 0) { match = m; break; }
+                        if (buf.len > 0 and buf[0] == '/') break;
+                    }
+                }
+                if (match == 0 and (buf.len == 0 or buf[0] == '/'))
+                    match = patMatchSlice(buf, pat, isdir);
+                return match;
+            },
+            '?' => {
+                if (buf.len == 0) return 0;
+                buf = buf[1..];
+            },
+            '/' => {
+                // Trailing '/' matches empty buf only when path is a directory.
+                if (pat.len == 1 and buf.len == 0) return @intFromBool(isdir);
+                match = @intFromBool(buf.len > 0 and buf[0] == pat[0]);
+                if (buf.len > 0) buf = buf[1..];
+            },
+            '\\' => {
+                pat = pat[1..]; // consume backslash; next char is literal
+                if (pat.len == 0) break;
+                match = @intFromBool(buf.len > 0 and condLower(buf[0]) == condLower(pat[0]));
+                if (buf.len > 0) buf = buf[1..];
+            },
+            else => {
+                match = @intFromBool(buf.len > 0 and condLower(buf[0]) == condLower(pat[0]));
+                if (buf.len > 0) buf = buf[1..];
+            },
+        }
+        pprev = pat[0];
+        pat = pat[1..];
+        if (match < 1) return match;
+    }
+    return if (buf.len == 0) match else 0;
+}
+
+/// C-exported entry point: converts C strings to slices and delegates.
+export fn patmatch(buf_ptr: [*c]const u8, pat_ptr: [*c]const u8, isdir: bool) c_int {
+    return patMatchSlice(std.mem.span(buf_ptr), std.mem.span(pat_ptr), isdir);
+}
+
+/// Returns non-zero if name matches any -I (ignore) pattern.
+export fn patignore(name: [*c]const u8, isdir: bool) c_int {
+    for (0..@as(usize, @intCast(ipattern))) |i| {
+        if (patmatch(name, ipatterns[i], isdir) != 0) return 1;
+    }
+    return 0;
+}
+
+/// Returns non-zero if name matches any -P (include) pattern.
+export fn patinclude(name: [*c]const u8, isdir: bool) c_int {
+    for (0..@as(usize, @intCast(pattern))) |i| {
+        if (patmatch(name, patterns[i], isdir) != 0) return 1;
+    }
+    return 0;
+}
+
+// ----------------------------------------------------------------------------
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
