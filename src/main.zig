@@ -586,6 +586,347 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 7: filesystem traversal migrated from tree.c
+
+// topsort is a function-pointer global still in tree.c (moves in Phase 8)
+extern var topsort: ?*const fn ([*c]?*c.struct__info, [*c]?*c.struct__info) callconv(.c) c_int;
+
+// Platform-portable accessors for struct stat time fields.
+// On Linux glibc the fields are st_atim/st_ctim/st_mtim (struct timespec).
+// On macOS they are st_atimespec/st_ctimespec/st_mtimespec.
+inline fn statAtime(st: *const c.struct_stat) c.time_t {
+    if (comptime @hasField(c.struct_stat, "st_atim")) return st.st_atim.tv_sec;
+    return st.st_atimespec.tv_sec;
+}
+inline fn statCtime(st: *const c.struct_stat) c.time_t {
+    if (comptime @hasField(c.struct_stat, "st_ctim")) return st.st_ctim.tv_sec;
+    return st.st_ctimespec.tv_sec;
+}
+inline fn statMtime(st: *const c.struct_stat) c.time_t {
+    if (comptime @hasField(c.struct_stat, "st_mtim")) return st.st_mtim.tv_sec;
+    return st.st_mtimespec.tv_sec;
+}
+
+// Zig equivalent of the scopy(x) macro: strcpy(xmalloc(strlen(x)+1), (x))
+fn scopy(s: [*c]const u8) [*c]u8 {
+    const len = c.strlen(s) + 1;
+    return c.strcpy(@ptrCast(xmalloc(len).?), s);
+}
+
+var stat2info_buf: c.struct__info = std.mem.zeroes(c.struct__info);
+
+export fn stat2info(st: ?*const c.struct_stat) ?*c.struct__info {
+    const s = st.?;
+    stat2info_buf.linode = s.st_ino;
+    stat2info_buf.ldev   = s.st_dev;
+    stat2info_buf.mode   = s.st_mode;
+    stat2info_buf.uid    = s.st_uid;
+    stat2info_buf.gid    = s.st_gid;
+    stat2info_buf.size   = s.st_size;
+    stat2info_buf.atime  = statAtime(s);
+    stat2info_buf.ctime  = statCtime(s);
+    stat2info_buf.mtime  = statMtime(s);
+    stat2info_buf.isdir  = (s.st_mode & c.S_IFMT) == c.S_IFDIR;
+    stat2info_buf.issok  = (s.st_mode & c.S_IFMT) == c.S_IFSOCK;
+    stat2info_buf.isfifo = (s.st_mode & c.S_IFMT) == c.S_IFIFO;
+    stat2info_buf.isexe  = (s.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
+    return &stat2info_buf;
+}
+
+var getinfo_lbuf: [*c]u8 = null;
+var getinfo_lbufsize: usize = 0;
+
+export fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
+    var st: c.struct_stat = undefined;
+    var lst: c.struct_stat = undefined;
+    var rs: c_int = 0;
+
+    if (getinfo_lbuf == null) {
+        getinfo_lbufsize = @intCast(c.PATH_MAX);
+        getinfo_lbuf = @ptrCast(xmalloc(getinfo_lbufsize).?);
+    }
+
+    if (c.lstat(path, &lst) < 0) return null;
+
+    if ((lst.st_mode & c.S_IFMT) == c.S_IFLNK) {
+        rs = c.stat(path, &st);
+        if (rs < 0) _ = c.memset(&st, 0, @sizeOf(c.struct_stat));
+    } else {
+        rs = 0;
+        st.st_mode = lst.st_mode;
+        st.st_dev  = lst.st_dev;
+        st.st_ino  = lst.st_ino;
+    }
+
+    const isdir: bool = (st.st_mode & c.S_IFMT) == c.S_IFDIR;
+    if (gitignore and c.filtercheck(path, name, @intFromBool(isdir))) return null;
+
+    if ((lst.st_mode & c.S_IFMT) != c.S_IFDIR and
+        !(lflag and (st.st_mode & c.S_IFMT) == c.S_IFDIR))
+    {
+        if (pattern != 0 and patinclude(name, isdir) == 0) return null;
+    }
+    if (ipattern != 0 and patignore(name, isdir) != 0) return null;
+    if (dflag and (st.st_mode & c.S_IFMT) != c.S_IFDIR) return null;
+
+    const ent: *c.struct__info = @ptrCast(@alignCast(xmalloc(@sizeOf(c.struct__info)).?));
+    _ = c.memset(ent, 0, @sizeOf(c.struct__info));
+
+    ent.name   = scopy(name);
+    ent.mode   = lst.st_mode;
+    ent.uid    = lst.st_uid;
+    ent.gid    = lst.st_gid;
+    ent.size   = lst.st_size;
+    ent.dev    = st.st_dev;
+    ent.inode  = st.st_ino;
+    ent.ldev   = lst.st_dev;
+    ent.linode = lst.st_ino;
+    ent.lnk    = null;
+    ent.orphan = false;
+    ent.err    = null;
+    ent.child  = null;
+    ent.atime  = statAtime(&lst);
+    ent.ctime  = statCtime(&lst);
+    ent.mtime  = statMtime(&lst);
+    ent.isdir  = isdir;
+    ent.issok  = (st.st_mode & c.S_IFMT) == c.S_IFSOCK;
+    ent.isfifo = (st.st_mode & c.S_IFMT) == c.S_IFIFO;
+    ent.isexe  = (st.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
+
+    if ((lst.st_mode & c.S_IFMT) == c.S_IFLNK) {
+        const lsz: usize = @intCast(lst.st_size);
+        if (lsz + 1 > getinfo_lbufsize) {
+            getinfo_lbufsize = lsz + 8192;
+            getinfo_lbuf = @ptrCast(xrealloc(getinfo_lbuf, getinfo_lbufsize).?);
+        }
+        const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
+        if (len < 0) {
+            ent.lnk    = scopy("[Error reading symbolic link information]");
+            ent.isdir  = false;
+            ent.lnkmode = st.st_mode;
+        } else {
+            getinfo_lbuf[@intCast(len)] = 0;
+            ent.lnk     = scopy(getinfo_lbuf);
+            if (rs < 0) ent.orphan = true;
+            ent.lnkmode = st.st_mode;
+        }
+    }
+
+    ent.comment = null;
+    return ent;
+}
+
+var read_dir_path: [*c]u8 = null;
+var read_dir_pathsize: usize = 0;
+
+export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*c.struct__info {
+    const es: bool = dir[c.strlen(dir) - 1] == '/';
+
+    if (read_dir_path == null) {
+        read_dir_pathsize = c.strlen(dir) + @as(usize, @intCast(c.PATH_MAX));
+        read_dir_path = @ptrCast(xmalloc(read_dir_pathsize).?);
+    }
+
+    n.* = -1;
+    const d = c.opendir(dir);
+    if (d == null) return null;
+
+    var ne: usize = c.MINIT;
+    var dl: [*c]?*c.struct__info = @ptrCast(@alignCast(xmalloc(@sizeOf(?*c.struct__info) * ne).?));
+    var p: usize = 0;
+
+    while (c.readdir(d)) |ent| {
+        const ename: [*c]const u8 = @ptrCast(&ent[0].d_name);
+        if (c.strcmp("..", ename) == 0 or c.strcmp(".", ename) == 0) continue;
+        if (Hflag and c.strcmp("00Tree.html", ename) == 0) continue;
+        if (!aflag and ename[0] == '.') continue;
+
+        const dlen = c.strlen(dir);
+        const elen = c.strlen(ename);
+        if (dlen + elen + 2 > read_dir_pathsize) {
+            read_dir_pathsize = dlen + elen + @as(usize, @intCast(c.PATH_MAX));
+            read_dir_path = @ptrCast(xrealloc(read_dir_path, read_dir_pathsize).?);
+        }
+        if (es) _ = c.sprintf(read_dir_path, "%s%s", dir, ename) else _ = c.sprintf(read_dir_path, "%s/%s", dir, ename);
+
+        if (getinfo(ename, read_dir_path)) |fi| {
+            if (showinfo) {
+                if (c.infocheck(read_dir_path, ename, infotop, fi.isdir)) |com| {
+                    var i: usize = 0;
+                    while (com[0].desc[i] != null) : (i += 1) {}
+                    fi.comment = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (i + 1)).?));
+                    i = 0;
+                    while (com[0].desc[i] != null) : (i += 1) fi.comment[i] = scopy(com[0].desc[i]);
+                    fi.comment[i] = null;
+                }
+            }
+            if (p == ne - 1) {
+                ne += c.MINC;
+                dl = @ptrCast(@alignCast(xrealloc(@ptrCast(dl), @sizeOf(?*c.struct__info) * ne).?));
+            }
+            dl[p] = fi;
+            p += 1;
+        }
+    }
+    _ = c.closedir(d);
+
+    n.* = @intCast(p);
+    if (p == 0) {
+        c.free(@ptrCast(dl));
+        return null;
+    }
+    dl[p] = null;
+    return dl;
+}
+
+export fn push_files(dir: [*c]const u8, ig: [*c]?*c.struct_ignorefile, inf: [*c]?*c.struct_infofile, top: bool) void {
+    if (gitignore) {
+        ig[0] = c.new_ignorefile(dir, top);
+        if (ig[0] != null) c.push_filterstack(ig[0]);
+    }
+    if (showinfo) {
+        inf[0] = c.new_infofile(dir, top);
+        if (inf[0] != null) c.push_infostack(inf[0]);
+    }
+}
+
+export fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c]?*c.struct__info {
+    var pathsize: usize = 0;
+    var ig: ?*c.struct_ignorefile = null;
+    var inf: ?*c.struct_infofile = null;
+    var n: isize = 0;
+
+    err[0] = null;
+    if (Level >= 0 and lev > @as(c_ulong, @intCast(Level))) return null;
+
+    var dev_cur = dev;
+    if (xdev and lev == 0) {
+        var sb: c.struct_stat = undefined;
+        _ = c.stat(d, &sb);
+        dev_cur = sb.st_dev;
+    }
+
+    var tmp_pattern: c_int = 0;
+    if (matchdirs and pattern != 0) {
+        var lev_tmp = lev;
+        var start_rel = d + c.strlen(d);
+        while (start_rel != d) {
+            start_rel -= 1;
+            if (start_rel[0] == '/') lev_tmp -%= 1;
+            if (lev_tmp == 0) {
+                if (start_rel[0] != 0) start_rel += 1;
+                break;
+            }
+        }
+        if (start_rel[0] != 0 and patinclude(start_rel, true) != 0) {
+            tmp_pattern = pattern;
+            pattern = 0;
+        }
+    }
+
+    push_files(d, @ptrCast(&ig), @ptrCast(&inf), lev == 0);
+    const sav = read_dir(d, &n, @intFromBool(inf != null));
+    var dir_ptr = sav;
+
+    if (tmp_pattern != 0) {
+        pattern = tmp_pattern;
+        tmp_pattern = 0;
+    }
+    if (dir_ptr == null and n != 0) {
+        err[0] = scopy("error opening dir");
+        return null;
+    }
+    if (n == 0) {
+        if (sav != null) free_dir(sav);
+        return null;
+    }
+
+    pathsize = @intCast(c.PATH_MAX);
+    var path: [*c]u8 = @ptrCast(xmalloc(pathsize).?);
+
+    if (flimit > 0 and n > @as(isize, @intCast(flimit))) {
+        _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", n);
+        err[0] = scopy(path);
+        free_dir(sav);
+        c.free(path);
+        return null;
+    }
+
+    if (lev >= maxdirs - 1) {
+        maxdirs += 1024;
+        dirs = @ptrCast(@alignCast(xrealloc(dirs, @sizeOf(c_int) * maxdirs).?));
+    }
+
+    while (dir_ptr[0] != null) {
+        const ep = dir_ptr[0].?;
+        if (ep.isdir and !(xdev and dev_cur != ep.dev)) {
+            if (ep.lnk != null) {
+                if (lflag) {
+                    if (c.findino(ep.inode, ep.dev)) {
+                        ep.err = scopy("recursive, not followed");
+                    } else {
+                        c.saveino(ep.inode, ep.dev);
+                        if (ep.lnk[0] == '/') {
+                            ep.child = unix_getfulltree(ep.lnk, lev + 1, dev_cur, &ep.size, &ep.err);
+                        } else {
+                            const need = c.strlen(d) + c.strlen(ep.lnk) + 2;
+                            if (need > pathsize) {
+                                pathsize = c.strlen(d) + c.strlen(ep.name) + 1024;
+                                path = @ptrCast(xrealloc(path, pathsize).?);
+                            }
+                            if (fflag and c.strcmp(d, "/") == 0)
+                                _ = c.sprintf(path, "%s%s", d, ep.lnk)
+                            else
+                                _ = c.sprintf(path, "%s/%s", d, ep.lnk);
+                            ep.child = unix_getfulltree(path, lev + 1, dev_cur, &ep.size, &ep.err);
+                        }
+                    }
+                }
+            } else {
+                const need = c.strlen(d) + c.strlen(ep.name) + 2;
+                if (need > pathsize) {
+                    pathsize = c.strlen(d) + c.strlen(ep.name) + 1024;
+                    path = @ptrCast(xrealloc(path, pathsize).?);
+                }
+                if (fflag and c.strcmp(d, "/") == 0)
+                    _ = c.sprintf(path, "%s%s", d, ep.name)
+                else
+                    _ = c.sprintf(path, "%s/%s", d, ep.name);
+                c.saveino(ep.inode, ep.dev);
+                ep.child = unix_getfulltree(path, lev + 1, dev_cur, &ep.size, &ep.err);
+            }
+            if (pruneflag and ep.child == null and
+                !(matchdirs and pattern != 0 and patinclude(ep.name, ep.isdir) != 0))
+            {
+                const xp = dir_ptr[0];
+                var pp = dir_ptr;
+                while (pp[0] != null) : (pp += 1) pp[0] = pp[1];
+                n -= 1;
+                c.free(xp.?.name);
+                if (xp.?.lnk != null) c.free(xp.?.lnk);
+                c.free(xp);
+                continue;
+            }
+        }
+        if (duflag) size.* += ep.size;
+        dir_ptr += 1;
+    }
+
+    if (topsort) |sort_fn| {
+        c.qsort(@ptrCast(sav), @intCast(n), @sizeOf(?*c.struct__info), @ptrCast(sort_fn));
+    }
+
+    c.free(path);
+    if (n == 0) {
+        free_dir(sav);
+        return null;
+    }
+    if (ig != null) _ = c.pop_filterstack();
+    if (inf != null) _ = c.pop_infostack();
+    return sav;
+}
+
+// ----------------------------------------------------------------------------
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
