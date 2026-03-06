@@ -34,15 +34,7 @@ struct _info **(*getfulltree)(char *d, u_long lev, dev_t dev, off_t *size, char 
 int (*basesort)(struct _info **, struct _info **) = alnumsort;
 int (*topsort)(struct _info **, struct _info **) = NULL;
 
-#ifdef S_IFPORT
-const mode_t ifmt[] = {S_IFREG, S_IFDIR, S_IFLNK, S_IFCHR, S_IFBLK, S_IFSOCK, S_IFIFO, S_IFDOOR, S_IFPORT, 0};
-const char fmt[] = "-dlcbspDP?";
-const char *ftype[] = {"file", "directory", "link", "char", "block", "socket", "fifo", "door", "port", "unknown", NULL};
-#else
-const mode_t ifmt[] = {S_IFREG, S_IFDIR, S_IFLNK, S_IFCHR, S_IFBLK, S_IFSOCK, S_IFIFO, 0};
-const char fmt[] = "-dlcbsp?";
-const char *ftype[] = {"file", "directory", "link", "char", "block", "socket", "fifo", "unknown", NULL};
-#endif
+/* ifmt, fmt, ftype moved to src/main.zig (Phase 6) */
 
 struct sorts {
   char *name;
@@ -595,23 +587,7 @@ int tree_main(int argc, char **argv)
   return errors ? 2 : 0;
 }
 
-void print_version(int nl)
-{
-  fprintf(outfile, "%s%s", version, nl?"\n":"");
-}
-
-void setoutput(const char *filename)
-{
-  if (filename == NULL) {
-    if (outfile == NULL) outfile = stdout;
-  } else {
-    outfile = fopen(filename, "w");
-    if (outfile == NULL) {
-      fprintf(stderr,"tree: invalid filename '%s'\n", filename);
-      exit(1);
-    }
-  }
-}
+/* print_version, setoutput moved to src/main.zig (Phase 6) */
 
 void usage(int n)
 {
@@ -1015,158 +991,8 @@ int dirsfirst(struct _info **a, struct _info **b)
 /* cond_lower, patmatch moved to src/main.zig (Phase 4) */
 
 
-/**
- * They cried out for ANSI-lines (not really), but here they are, as an option
- * for the xterm and console capable among you, as a run-time option.
- */
-void indent(int maxlevel)
-{
-  int i;
-
-  if (ansilines) {
-    if (dirs[1]) fprintf(outfile,"\033(0");
-    for(i=1; (i <= maxlevel) && dirs[i]; i++) {
-      if (dirs[i+1]) {
-	if (dirs[i] == 1) fprintf(outfile,"\170   ");
-	else printf("    ");
-      } else {
-	if (dirs[i] == 1) fprintf(outfile,"\164\161\161 ");
-	else fprintf(outfile,"\155\161\161 ");
-      }
-    }
-    if (dirs[1]) fprintf(outfile,"\033(B");
-  } else {
-    if (Hflag) fprintf(outfile,"\t");
-    for(i=1; (i <= maxlevel) && dirs[i]; i++) {
-      fprintf(outfile,"%s ",
-	      dirs[i+1] ? (dirs[i]==1 ? linedraw->vert     : (Hflag? "&nbsp;&nbsp;&nbsp;" : "   ") )
-			: (dirs[i]==1 ? linedraw->vert_left:linedraw->corner));
-    }
-  }
-}
-
-
-char *prot(mode_t m)
-{
-  static char buf[11], perms[] = "rwxrwxrwx";
-  int i;
-  mode_t b;
-
-  for(i=0;ifmt[i] && (m&S_IFMT) != ifmt[i];i++);
-  buf[0] = fmt[i];
-
-  /**
-   * Nice, but maybe not so portable, it is should be no less portable than the
-   * old code.
-   */
-  for(b=S_IRUSR,i=0; i<9; b>>=1,i++)
-    buf[i+1] = (m & (b)) ? perms[i] : '-';
-  if (m & S_ISUID) buf[3] = (buf[3]=='-')? 'S' : 's';
-  if (m & S_ISGID) buf[6] = (buf[6]=='-')? 'S' : 's';
-  if (m & S_ISVTX) buf[9] = (buf[9]=='-')? 'T' : 't';
-
-  buf[10] = 0;
-  return buf;
-}
-
-#define SIXMONTHS (6*31*24*60*60)
-
-char *do_date(time_t t)
-{
-  static char buf[256];
-  struct tm *tm;
-
-  tm = localtime(&t);
-
-  if (timefmt) {
-    strftime(buf,255,timefmt,tm);
-    buf[255] = 0;
-  } else {
-    time_t c = time(0);
-    /* Use strftime() so that locale is respected: */
-    if (t > c || (t+SIXMONTHS) < c)
-      strftime(buf,255,"%b %e  %Y",tm);
-    else
-      strftime(buf,255,"%b %e %R", tm);
-  }
-  return buf;
-}
-
-/**
- * Must fix this someday
- */
-void printit(const char *s)
-{
-  int c;
-  size_t cs;
-
-  if (Nflag) {
-    if (Qflag) fprintf(outfile, "\"%s\"",s);
-    else fprintf(outfile,"%s",s);
-    return;
-  }
-  if (mb_cur_max > 1) {
-    wchar_t *ws, *tp;
-    ws = xmalloc(sizeof(wchar_t)* (cs=(strlen(s)+1)));
-    if (mbstowcs(ws,s,cs) != (size_t)-1) {
-      if (Qflag) putc('"',outfile);
-      for(tp=ws;*tp && cs > 1;tp++, cs--) {
-	if (iswprint((wint_t)*tp)) fprintf(outfile,"%lc",(wint_t)*tp);
-	else {
-	  if (qflag) putc('?',outfile);
-	  else fprintf(outfile,"\\%03o",(unsigned int)*tp);
-	}
-      }
-      if (Qflag) putc('"',outfile);
-      free(ws);
-      return;
-    }
-    free(ws);
-  }
-  if (Qflag) putc('"',outfile);
-  for(;*s;s++) {
-    c = (unsigned char)*s;
-    if((c >= 7 && c <= 13) || c == '\\' || (c == '"' && Qflag) || (c == ' ' && !Qflag)) {
-      putc('\\',outfile);
-      if (c > 13) putc(c, outfile);
-      else putc("abtnvfr"[c-7], outfile);
-    } else if (isprint(c)) putc(c,outfile);
-    else {
-      if (qflag) {
-	if (mb_cur_max > 1 && c > 127) putc(c,outfile);
-	else putc('?',outfile);
-      } else fprintf(outfile,"\\%03o",c);
-    }
-  }
-  if (Qflag) putc('"',outfile);
-}
-
-int psize(char *buf, off_t size)
-{
-  static char *iec_unit="BKMGTPEZY", *si_unit = "dkMGTPEZY";
-  char *unit = siflag ? si_unit : iec_unit;
-  int idx, usize = siflag ? 1000 : 1024;
-
-  if (hflag || siflag) {
-    for (idx=size<usize?0:1; size >= (usize*usize); idx++,size/=usize);
-    if (!idx) return sprintf(buf, " %4d", (int)size);
-    else return sprintf(buf, (((size+52)/usize) >= 10)? " %3.0f%c" : " %3.1f%c" , (float)size/(float)usize,unit[idx]);
-  } else return sprintf(buf, sizeof(off_t) == sizeof(long long)? " %11lld" : " %9lld", (long long int)size);
-}
-
-char Ftype(mode_t mode)
-{
-  int m = mode & S_IFMT;
-  if (!dflag && m == S_IFDIR) return '/';
-  else if (m == S_IFSOCK) return '=';
-  else if (m == S_IFIFO) return '|';
-  else if (m == S_IFLNK) return '@'; /* Here, but never actually used though. */
-#ifdef S_IFDOOR
-  else if (m == S_IFDOOR) return '>';
-#endif
-  else if ((m == S_IFREG) && (mode & (S_IXUSR | S_IXGRP | S_IXOTH))) return '*';
-  return 0;
-}
+/* indent, prot, do_date, printit, psize, Ftype, fillinfo moved to src/main.zig (Phase 6) */
+/* stat2info stays in tree.c until Phase 7 (stat struct field access) */
 
 struct _info *stat2info(const struct stat *st)
 {
@@ -1188,28 +1014,4 @@ struct _info *stat2info(const struct stat *st)
   info.isexe  = (st->st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) ? 1 : 0;
 
   return &info;
-}
-
-char *fillinfo(char *buf, const struct _info *ent)
-{
-  int n;
-  buf[n=0] = 0;
-  #ifdef __USE_FILE_OFFSET64
-  if (inodeflag) n += sprintf(buf," %7lld",(long long)ent->linode);
-  #else
-  if (inodeflag) n += sprintf(buf," %7ld",(long int)ent->linode);
-  #endif
-  if (devflag) n += sprintf(buf+n, " %3d", (int)ent->ldev);
-  if (pflag) n += sprintf(buf+n, " %s", prot(ent->mode));
-  if (uflag) n += sprintf(buf+n, " %-8.32s", uidtoname(ent->uid));
-  if (gflag) n += sprintf(buf+n, " %-8.32s", gidtoname(ent->gid));
-  if (sflag) n += psize(buf+n,ent->size);
-  if (Dflag) n += sprintf(buf+n, " %s", do_date(cflag? ent->ctime : ent->mtime));
-
-  if (buf[0] == ' ') {
-      buf[0] = '[';
-      sprintf(buf+n, "]");
-  }
-
-  return buf;
 }

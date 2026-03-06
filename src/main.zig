@@ -373,6 +373,219 @@ export fn fsizesort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 6: format utilities migrated from tree.c
+
+// Variables defined in color.c
+extern var ansilines: bool;
+extern var linedraw: ?*const c.struct_linedraw;
+
+// Platform-specific file-type lookup tables (also used by json.c and xml.c)
+fn makeIfmt() [if (@hasDecl(c, "S_IFPORT")) 10 else 8]c.mode_t {
+    if (comptime @hasDecl(c, "S_IFPORT")) {
+        return .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, c.S_IFDOOR, c.S_IFPORT, 0 };
+    } else {
+        return .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, 0 };
+    }
+}
+export const ifmt = makeIfmt();
+
+const fmt_arr: [*]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?";
+
+fn makeFtype() [if (@hasDecl(c, "S_IFPORT")) 11 else 9][*c]const u8 {
+    if (comptime @hasDecl(c, "S_IFPORT")) {
+        return .{ "file", "directory", "link", "char", "block", "socket", "fifo", "door", "port", "unknown", null };
+    } else {
+        return .{ "file", "directory", "link", "char", "block", "socket", "fifo", "unknown", null };
+    }
+}
+export const ftype = makeFtype();
+
+export fn print_version(nl: c_int) void {
+    _ = c.fprintf(outfile, "%s%s", version, @as([*c]const u8, if (nl != 0) "\n" else ""));
+}
+
+export fn setoutput(filename: [*c]const u8) void {
+    if (filename == null) {
+        if (outfile == null) outfile = c.stdout;
+    } else {
+        outfile = c.fopen(filename, "w");
+        if (outfile == null) {
+            _ = c.fprintf(c.stderr, "tree: invalid filename '%s'\n", filename);
+            c.exit(1);
+        }
+    }
+}
+
+export fn indent(maxlevel: c_int) void {
+    if (maxlevel <= 0) return;
+    const max: usize = @intCast(maxlevel);
+    if (ansilines) {
+        if (dirs[1] != 0) _ = c.fprintf(outfile, "\x1b(0");
+        var i: usize = 1;
+        while (i <= max and dirs[i] != 0) : (i += 1) {
+            if (dirs[i + 1] != 0) {
+                if (dirs[i] == 1) _ = c.fprintf(outfile, "\x78   ") else _ = c.printf("    ");
+            } else {
+                if (dirs[i] == 1) _ = c.fprintf(outfile, "\x74\x71\x71 ") else _ = c.fprintf(outfile, "\x6d\x71\x71 ");
+            }
+        }
+        if (dirs[1] != 0) _ = c.fprintf(outfile, "\x1b(B");
+    } else {
+        if (Hflag) _ = c.fprintf(outfile, "\t");
+        const ld = linedraw.?.*;
+        var i: usize = 1;
+        while (i <= max and dirs[i] != 0) : (i += 1) {
+            _ = c.fprintf(outfile, "%s ", if (dirs[i + 1] != 0)
+                (if (dirs[i] == 1) ld.vert else if (Hflag) @as([*c]const u8, "&nbsp;&nbsp;&nbsp;") else @as([*c]const u8, "   "))
+            else
+                (if (dirs[i] == 1) ld.vert_left else ld.corner));
+        }
+    }
+}
+
+var prot_buf: [11]u8 = undefined;
+
+export fn prot(m: c.mode_t) [*c]u8 {
+    const perms = "rwxrwxrwx";
+    var i: usize = 0;
+    while (ifmt[i] != 0 and (m & c.S_IFMT) != ifmt[i]) : (i += 1) {}
+    prot_buf[0] = fmt_arr[i];
+    var b: c.mode_t = c.S_IRUSR;
+    var j: usize = 0;
+    while (j < 9) : ({
+        b >>= 1;
+        j += 1;
+    }) {
+        prot_buf[j + 1] = if ((m & b) != 0) perms[j] else '-';
+    }
+    if ((m & c.S_ISUID) != 0) prot_buf[3] = if (prot_buf[3] == '-') 'S' else 's';
+    if ((m & c.S_ISGID) != 0) prot_buf[6] = if (prot_buf[6] == '-') 'S' else 's';
+    if ((m & c.S_ISVTX) != 0) prot_buf[9] = if (prot_buf[9] == '-') 'T' else 't';
+    prot_buf[10] = 0;
+    return &prot_buf;
+}
+
+const SIXMONTHS: c.time_t = 6 * 31 * 24 * 60 * 60;
+var do_date_buf: [256]u8 = undefined;
+
+export fn do_date(t: c.time_t) [*c]u8 {
+    const tm = c.localtime(&t);
+    if (timefmt != null) {
+        _ = c.strftime(&do_date_buf[0], 255, timefmt, tm);
+        do_date_buf[255] = 0;
+    } else {
+        const cur = c.time(0);
+        if (t > cur or (t + SIXMONTHS) < cur) {
+            _ = c.strftime(&do_date_buf[0], 255, "%b %e  %Y", tm);
+        } else {
+            _ = c.strftime(&do_date_buf[0], 255, "%b %e %R", tm);
+        }
+    }
+    return &do_date_buf[0];
+}
+
+export fn printit(s: [*c]const u8) void {
+    if (Nflag) {
+        if (Qflag) _ = c.fprintf(outfile, "\"%s\"", s) else _ = c.fprintf(outfile, "%s", s);
+        return;
+    }
+    if (mb_cur_max > 1) {
+        const cs: usize = c.strlen(s) + 1;
+        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(xmalloc(@sizeOf(c.wchar_t) * cs)));
+        if (c.mbstowcs(ws, s, cs) != std.math.maxInt(usize)) {
+            if (Qflag) _ = c.putc('"', outfile);
+            var tp = ws;
+            var rem = cs;
+            while (tp[0] != 0 and rem > 1) : ({
+                tp += 1;
+                rem -= 1;
+            }) {
+                if (c.iswprint(@bitCast(@as(i32, tp[0]))) != 0) {
+                    _ = c.fprintf(outfile, "%lc", @as(c.wint_t, @bitCast(@as(i32, tp[0]))));
+                } else {
+                    if (qflag) _ = c.putc('?', outfile) else _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @bitCast(@as(i32, tp[0]))));
+                }
+            }
+            if (Qflag) _ = c.putc('"', outfile);
+            c.free(ws);
+            return;
+        }
+        c.free(ws);
+    }
+    if (Qflag) _ = c.putc('"', outfile);
+    var p = s;
+    while (p[0] != 0) : (p += 1) {
+        const ch: c_int = @as(c_int, p[0]);
+        if ((ch >= 7 and ch <= 13) or ch == '\\' or (ch == '"' and Qflag) or (ch == ' ' and !Qflag)) {
+            _ = c.putc('\\', outfile);
+            if (ch > 13) _ = c.putc(ch, outfile) else _ = c.putc(@as(c_int, "abtnvfr"[@as(usize, @intCast(ch - 7))]), outfile);
+        } else if (c.isprint(ch) != 0) {
+            _ = c.putc(ch, outfile);
+        } else {
+            if (qflag) {
+                if (mb_cur_max > 1 and ch > 127) _ = c.putc(ch, outfile) else _ = c.putc('?', outfile);
+            } else _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @intCast(ch)));
+        }
+    }
+    if (Qflag) _ = c.putc('"', outfile);
+}
+
+export fn psize(buf: [*c]u8, size: c.off_t) c_int {
+    const iec_unit: [*]const u8 = "BKMGTPEZY";
+    const si_unit: [*]const u8 = "dkMGTPEZY";
+    const unit: [*]const u8 = if (siflag) si_unit else iec_unit;
+    const unit_size: c.off_t = if (siflag) 1000 else 1024;
+
+    if (hflag or siflag) {
+        var sz = size;
+        var idx: c_int = if (sz < unit_size) 0 else 1;
+        while (sz >= unit_size * unit_size) {
+            idx += 1;
+            sz = @divTrunc(sz, unit_size);
+        }
+        if (idx == 0) {
+            return c.sprintf(buf, " %4d", @as(c_int, @intCast(sz)));
+        } else {
+            const fmt_str: [*c]const u8 = if (@divTrunc(sz + 52, unit_size) >= 10) " %3.0f%c" else " %3.1f%c";
+            return c.sprintf(buf, fmt_str, @as(f64, @floatFromInt(sz)) / @as(f64, @floatFromInt(unit_size)), unit[@intCast(idx)]);
+        }
+    } else {
+        return c.sprintf(buf, if (@sizeOf(c.off_t) == @sizeOf(c_longlong)) " %11lld" else " %9lld", @as(c_longlong, @intCast(size)));
+    }
+}
+
+export fn Ftype(mode: c.mode_t) u8 {
+    const m = mode & c.S_IFMT;
+    if (!dflag and m == c.S_IFDIR) return '/';
+    if (m == c.S_IFSOCK) return '=';
+    if (m == c.S_IFIFO) return '|';
+    if (m == c.S_IFLNK) return '@';
+    if (comptime @hasDecl(c, "S_IFDOOR")) {
+        if (m == c.S_IFDOOR) return '>';
+    }
+    if (m == c.S_IFREG and (mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0) return '*';
+    return 0;
+}
+
+export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
+    var n: c_int = 0;
+    buf[0] = 0;
+    const e = ent.?;
+    if (inodeflag) n += c.sprintf(buf, " %7lld", @as(c_longlong, @intCast(e.linode)));
+    if (devflag) n += c.sprintf(buf + @as(usize, @intCast(n)), " %3d", @as(c_int, @intCast(e.ldev)));
+    if (pflag) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", prot(e.mode));
+    if (uflag) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", c.uidtoname(e.uid));
+    if (gflag) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", c.gidtoname(e.gid));
+    if (sflag) n += psize(buf + @as(usize, @intCast(n)), e.size);
+    if (Dflag) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", do_date(if (cflag) e.ctime else e.mtime));
+    if (buf[0] == ' ') {
+        buf[0] = '[';
+        _ = c.sprintf(buf + @as(usize, @intCast(n)), "]");
+    }
+    return buf;
+}
+
+// ----------------------------------------------------------------------------
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
