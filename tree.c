@@ -1009,55 +1009,7 @@ int dirsfirst(struct _info **a, struct _info **b)
   return basesort(a, b);
 }
 
-/* Sorting functions */
-int alnumsort(struct _info **a, struct _info **b)
-{
-  int v = strcoll((*a)->name,(*b)->name);
-  return reverse? -v : v;
-}
-
-int versort(struct _info **a, struct _info **b)
-{
-  int v = strverscmp((*a)->name,(*b)->name);
-  return reverse? -v : v;
-}
-
-int mtimesort(struct _info **a, struct _info **b)
-{
-  int v;
-
-  if ((*a)->mtime == (*b)->mtime) {
-    v = strcoll((*a)->name,(*b)->name);
-    return reverse? -v : v;
-  }
-  v =  (*a)->mtime == (*b)->mtime? 0 : ((*a)->mtime < (*b)->mtime ? -1 : 1);
-  return reverse? -v : v;
-}
-
-int ctimesort(struct _info **a, struct _info **b)
-{
-  int v;
-
-  if ((*a)->ctime == (*b)->ctime) {
-    v = strcoll((*a)->name,(*b)->name);
-    return reverse? -v : v;
-  }
-  v = (*a)->ctime == (*b)->ctime? 0 : ((*a)->ctime < (*b)->ctime? -1 : 1);
-  return reverse? -v : v;
-}
-
-int sizecmp(off_t a, off_t b)
-{
-  return (a == b)? 0 : ((a < b)? 1 : -1);
-}
-
-int fsizesort(struct _info **a, struct _info **b)
-{
-  int v = sizecmp((*a)->size, (*b)->size);
-  if (v == 0) v = strcoll((*a)->name,(*b)->name);
-  return reverse? -v : v;
-}
-
+/* sizecmp, alnumsort, versort, mtimesort, ctimesort, fsizesort moved to src/main.zig (Phase 5) */
 /* xmalloc, xrealloc, free_dir, gnu_getcwd moved to src/main.zig (Phase 3) */
 
 /* cond_lower, patmatch moved to src/main.zig (Phase 4) */

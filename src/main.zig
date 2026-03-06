@@ -1,8 +1,6 @@
 const std = @import("std");
 
 const man = @import("man.zig");
-const strverscmp = @import("strverscmp.zig");
-
 const c = @cImport({
     @cDefine("_DEFAULT_SOURCE", "");
     @cInclude("tree.h");
@@ -11,9 +9,12 @@ const c = @cImport({
 // Import C main fn (tree_main still lives in tree.c for now)
 extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
 
-// Include tests from imported modules
+// strverscmp is compiled as a separate linked object (src/strverscmp.zig)
+extern fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int;
+
+// Include tests from strverscmp module
 test {
-    _ = strverscmp;
+    _ = @import("strverscmp.zig");
 }
 
 // ----------------------------------------------------------------------------
@@ -312,6 +313,63 @@ export fn patinclude(name: [*c]const u8, isdir: bool) c_int {
         if (patmatch(name, patterns[i], isdir) != 0) return 1;
     }
     return 0;
+}
+
+// ----------------------------------------------------------------------------
+// Sort functions migrated from tree.c (Phase 5 — idiomatic Zig)
+//
+// filesfirst/dirsfirst call the `basesort` function-pointer global which is
+// still in tree.c; they move in Phase 8 along with tree_main.
+// All others are self-contained comparators over struct _info fields.
+// ----------------------------------------------------------------------------
+
+/// Raw size comparator used by fsizesort (descending: larger files first).
+export fn sizecmp(a: c.off_t, b: c.off_t) c_int {
+    if (a == b) return 0;
+    return if (a < b) 1 else -1;
+}
+
+export fn alnumsort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    const v = c.strcoll(a[0].?.name, b[0].?.name);
+    return if (reverse) -v else v;
+}
+
+export fn versort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    const v = strverscmp(
+        @ptrCast(a[0].?.name),
+        @ptrCast(b[0].?.name),
+    );
+    return if (reverse) -v else v;
+}
+
+export fn mtimesort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    const ai = a[0].?;
+    const bi = b[0].?;
+    if (ai.mtime == bi.mtime) {
+        const v = c.strcoll(ai.name, bi.name);
+        return if (reverse) -v else v;
+    }
+    const v: c_int = if (ai.mtime < bi.mtime) -1 else 1;
+    return if (reverse) -v else v;
+}
+
+export fn ctimesort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    const ai = a[0].?;
+    const bi = b[0].?;
+    if (ai.ctime == bi.ctime) {
+        const v = c.strcoll(ai.name, bi.name);
+        return if (reverse) -v else v;
+    }
+    const v: c_int = if (ai.ctime < bi.ctime) -1 else 1;
+    return if (reverse) -v else v;
+}
+
+export fn fsizesort(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    const ai = a[0].?;
+    const bi = b[0].?;
+    var v = sizecmp(ai.size, bi.size);
+    if (v == 0) v = c.strcoll(ai.name, bi.name);
+    return if (reverse) -v else v;
 }
 
 // ----------------------------------------------------------------------------
