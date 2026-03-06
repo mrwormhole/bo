@@ -1,42 +1,38 @@
 #include "tree.h"
 
-char *version = "bo (The Bodhi Tree) v0.0.2";
+/* Globals now defined in src/main.zig; extern declarations keep remaining C
+ * functions compiling until each is ported to Zig. */
+extern char *version;
+extern bool dflag, lflag, pflag, sflag, Fflag, aflag, fflag, uflag, gflag;
+extern bool qflag, Nflag, Qflag, Dflag, inodeflag, devflag, hflag, Rflag;
+extern bool Hflag, siflag, cflag, Xflag, Jflag, duflag, pruneflag, hyperflag;
+extern bool noindent, force_color, nocolor, xdev, noreport, nolinks;
+extern bool ignorecase, matchdirs, fromfile, metafirst, gitignore, showinfo;
+extern bool reverse, fflinks, htmloffset;
+extern int flimit;
+extern struct listingcalls lc;
+extern int pattern, maxpattern, ipattern, maxipattern;
+extern char **patterns, **ipatterns;
+extern char *host, *title, *sp, *_nl;
+extern char *Hintro, *Houtro, *scheme, *authority;
+extern char *file_comment, *file_pathsep;
+extern char *timefmt;
+extern const char *charset;
+extern char *sLevel, *curdir;
+extern FILE *outfile;
+extern int *dirs;
+extern ssize_t Level;
+extern size_t maxdirs;
+extern int errors;
+extern char xpattern[4096]; /* PATH_MAX */
+extern int mb_cur_max;
 
-/* Globals */
-bool dflag, lflag, pflag, sflag, Fflag, aflag, fflag, uflag, gflag;
-bool qflag, Nflag, Qflag, Dflag, inodeflag, devflag, hflag, Rflag;
-bool Hflag, siflag, cflag, Xflag, Jflag, duflag, pruneflag, hyperflag;
-bool noindent, force_color, nocolor, xdev, noreport, nolinks;
-bool ignorecase, matchdirs, fromfile, metafirst, gitignore, showinfo;
-bool reverse, fflinks, htmloffset;
-int flimit;
-
-struct listingcalls lc;
-
-int pattern = 0, maxpattern = 0, ipattern = 0, maxipattern = 0;
-char **patterns = NULL, **ipatterns = NULL;
-
-char *host = NULL, *title = "Directory Tree", *sp = " ", *_nl = "\n";
-char *Hintro = NULL, *Houtro = NULL, *scheme = "file://", *authority = NULL;
-char *file_comment = "#", *file_pathsep = "/";
-char *timefmt = NULL;
-const char *charset = NULL;
-
+/* Function-pointer globals stay here until the functions they reference move
+ * to Zig (Phases 4-7 of the tree.c migration plan). */
 struct _info **(*getfulltree)(char *d, u_long lev, dev_t dev, off_t *size, char **err) = unix_getfulltree;
 /* off_t (*listdir)(char *, int *, int *, u_long, dev_t) = unix_listdir; */
 int (*basesort)(struct _info **, struct _info **) = alnumsort;
 int (*topsort)(struct _info **, struct _info **) = NULL;
-
-char *sLevel, *curdir;
-FILE *outfile = NULL;
-int *dirs;
-ssize_t Level;
-size_t maxdirs;
-int errors;
-
-char xpattern[PATH_MAX];
-
-int mb_cur_max;
 
 #ifdef S_IFPORT
 const mode_t ifmt[] = {S_IFREG, S_IFDIR, S_IFLNK, S_IFCHR, S_IFBLK, S_IFSOCK, S_IFIFO, S_IFDOOR, S_IFPORT, 0};

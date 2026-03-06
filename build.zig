@@ -46,6 +46,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
+    // Allow @cImport("tree.h") in Zig source files to resolve against the
+    // project root where tree.h lives.
+    exe.addIncludePath(b.path("."));
+
     const sources = sources_buf[0..num_sources];
     const cflags = &[_][]const u8{
         "-std=c11",
