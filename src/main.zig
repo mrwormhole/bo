@@ -6,8 +6,7 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-// Import C main fn (tree_main still lives in tree.c for now)
-extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
+// tree_main has been migrated to Zig (Phase 8); forward declaration removed.
 
 // strverscmp is compiled as a separate linked object (src/strverscmp.zig)
 extern fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int;
@@ -588,8 +587,18 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
 // ----------------------------------------------------------------------------
 // Phase 7: filesystem traversal migrated from tree.c
 
-// topsort is a function-pointer global still in tree.c (moves in Phase 8)
-extern var topsort: ?*const fn ([*c]?*c.struct__info, [*c]?*c.struct__info) callconv(.c) c_int;
+// Function-pointer globals moved from tree.c (Phase 8)
+const SortFn = fn ([*c]?*c.struct__info, [*c]?*c.struct__info) callconv(.c) c_int;
+const GetfulltreeFn = fn ([*c]u8, c_ulong, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c]?*c.struct__info;
+
+export var basesort: ?*const SortFn = &alnumsort;
+export var topsort: ?*const SortFn = null;
+export var getfulltree: ?*const GetfulltreeFn = &unix_getfulltree;
+
+// Hash tables defined in hash.c; needed to zero-initialise in treeMain.
+extern var gtable: [256]?*c.struct_xtable;
+extern var utable: [256]?*c.struct_xtable;
+extern var itable: [256]?*c.struct_inotable;
 
 // Platform-portable accessors for struct stat time fields.
 // On Linux glibc the fields are st_atim/st_ctim/st_mtim (struct timespec).
@@ -927,6 +936,609 @@ export fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev: c.dev_t, size: [*c]c.of
 }
 
 // ----------------------------------------------------------------------------
+// Phase 8: filesfirst / dirsfirst / sorts / long_arg / usage / tree_main
+
+export fn filesfirst(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    if (a[0].?.isdir != b[0].?.isdir) return if (a[0].?.isdir) 1 else -1;
+    return basesort.?(a, b);
+}
+
+export fn dirsfirst(a: [*c]?*c.struct__info, b: [*c]?*c.struct__info) c_int {
+    if (a[0].?.isdir != b[0].?.isdir) return if (a[0].?.isdir) -1 else 1;
+    return basesort.?(a, b);
+}
+
+const Sort = struct {
+    name: [*c]const u8,
+    cmpfunc: ?*const SortFn,
+};
+const sorts = [_]Sort{
+    .{ .name = "name",    .cmpfunc = &alnumsort },
+    .{ .name = "version", .cmpfunc = &versort },
+    .{ .name = "size",    .cmpfunc = &fsizesort },
+    .{ .name = "mtime",   .cmpfunc = &mtimesort },
+    .{ .name = "ctime",   .cmpfunc = &ctimesort },
+    .{ .name = "none",    .cmpfunc = null },
+    .{ .name = null,      .cmpfunc = null },
+};
+
+fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*:0]const u8) [*c]u8 {
+    const len = c.strlen(prefix);
+    if (c.strncmp(prefix, @as([*c]const u8, argv[i]), len) != 0) return null;
+    j.* = len;
+    if (argv[i][j.*] == '=') {
+        j.* += 1;
+        if (argv[i][j.*] != 0) {
+            const ret: [*c]u8 = argv[i] + j.*;
+            j.* = c.strlen(argv[i]) - 1;
+            return ret;
+        }
+        _ = c.fprintf(c.stderr, "tree: Missing argument to %s=\n", prefix);
+        if (c.strcmp(prefix, "--charset=") == 0) c.initlinedraw(true);
+        c.exit(1);
+    } else if (argv[n.*] != null) {
+        const ret: [*c]u8 = argv[n.*];
+        n.* += 1;
+        j.* = c.strlen(argv[i]) - 1;
+        return ret;
+    } else {
+        _ = c.fprintf(c.stderr, "tree: Missing argument to %s\n", prefix);
+        if (c.strcmp(prefix, "--charset") == 0) c.initlinedraw(true);
+        c.exit(1);
+    }
+    return null;
+}
+
+// \x08 = \b (bold-on marker for fancy()), \x0C = \f (italic-on marker for fancy())
+export fn usage(n: c_int) void {
+    c.parse_dir_colors();
+    c.initlinedraw(false);
+    c.fancy(if (n < 2) c.stderr else c.stdout, @constCast(
+        "usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0Clevel\r [\x08-R\r]] [\x08-H\r [-]\x0CbaseHREF\r]\n" ++
+        "\t[\x08-T\r \x0Ctitle\r] [\x08-o\r \x0Cfilename\r] [\x08-P\r \x0Cpattern\r] [\x08-I\r \x0Cpattern\r] [\x08--gitignore\r]\n" ++
+        "\t[\x08--gitfile\r[\x08=\r]\x0Cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
+        "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0Cfile\r] [\x08--houtro\r[\x08=\r]\x0Cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
+        "\t[\x08--sort\r[\x08=\r]\x0Cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0C#\r] [\x08--si\r]\n" ++
+        "\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0CX\r] [\x08--timefmt\r[\x08=\r]\x0Cformat\r] [\x08--fromfile\r]\n" ++
+        "\t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0Cfile\r] [\x08--noreport\r]\n" ++
+        "\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0Cschema\r] [\x08--authority\r[\x08=\r]\x0Chost\r] [\x08--opt-toggle\r]\n" ++
+        "\t[\x08--version\r] [\x08--help\r] [\x08--\r] [\x0Cdirectory\r \x08...\r]\n"));
+    if (n < 2) return;
+    c.fancy(c.stdout, @constCast(
+        "  \x08------- Listing options -------\r\n" ++
+        "  \x08-a\r            All files are listed.\n" ++
+        "  \x08-d\r            List directories only.\n" ++
+        "  \x08-l\r            Follow symbolic links like directories.\n" ++
+        "  \x08-f\r            Print the full path prefix for each file.\n" ++
+        "  \x08-x\r            Stay on current filesystem only.\n" ++
+        "  \x08-L\r \x0Clevel\r      Descend only \x0Clevel\r directories deep.\n" ++
+        "  \x08-R\r            Rerun tree when max dir level reached.\n" ++
+        "  \x08-P\r \x0Cpattern\r    List only those files that match the pattern given.\n" ++
+        "  \x08-I\r \x0Cpattern\r    Do not list files that match the given pattern.\n" ++
+        "  \x08--gitignore\r   Filter by using \x08.gitignore\r files.\n" ++
+        "  \x08--gitfile\r \x0CX\r   Explicitly read a gitignore file.\n" ++
+        "  \x08--ignore-case\r Ignore case when pattern matching.\n" ++
+        "  \x08--matchdirs\r   Include directory names in \x08-P\r pattern matching.\n" ++
+        "  \x08--metafirst\r   Print meta-data at the beginning of each line.\n" ++
+        "  \x08--prune\r       Prune empty directories from the output.\n" ++
+        "  \x08--info\r        Print information about files found in \x08.info\r files.\n" ++
+        "  \x08--infofile\r \x0CX\r  Explicitly read info file.\n" ++
+        "  \x08--noreport\r    Turn off file/directory count at end of tree listing.\n" ++
+        "  \x08--charset\r \x0CX\r   Use charset \x0CX\r for terminal/HTML and indentation line output.\n" ++
+        "  \x08--filelimit\r \x0C#\r Do not descend dirs with more than \x0C#\r files in them.\n" ++
+        "  \x08-o\r \x0Cfilename\r   Output to file instead of stdout.\n" ++
+        "  \x08------- File options -------\r\n" ++
+        "  \x08-q\r            Print non-printable characters as '\x08?\r'.\n" ++
+        "  \x08-N\r            Print non-printable characters as is.\n" ++
+        "  \x08-Q\r            Quote filenames with double quotes.\n" ++
+        "  \x08-p\r            Print the protections for each file.\n" ++
+        "  \x08-u\r            Displays file owner or UID number.\n" ++
+        "  \x08-g\r            Displays file group owner or GID number.\n" ++
+        "  \x08-s\r            Print the size in bytes of each file.\n" ++
+        "  \x08-h\r            Print the size in a more human readable way.\n" ++
+        "  \x08--si\r          Like \x08-h\r, but use in SI units (powers of 1000).\n" ++
+        "  \x08--du\r          Compute size of directories by their contents.\n" ++
+        "  \x08-D\r            Print the date of last modification or (-c) status change.\n" ++
+        "  \x08--timefmt\r \x0Cfmt\r Print and format time according to the format \x0Cfmt\r.\n" ++
+        "  \x08-F\r            Appends '\x08/\r', '\x08=\r', '\x08*\r', '\x08@\r', '\x08|\r' or '\x08>\r' as per \x08ls -F\r.\n" ++
+        "  \x08--inodes\r      Print inode number of each file.\n" ++
+        "  \x08--device\r      Print device ID number to which each file belongs.\n"));
+    c.fancy(c.stdout, @constCast(
+        "  \x08------- Sorting options -------\r\n" ++
+        "  \x08-v\r            Sort files alphanumerically by version.\n" ++
+        "  \x08-t\r            Sort files by last modification time.\n" ++
+        "  \x08-c\r            Sort files by last status change time.\n" ++
+        "  \x08-U\r            Leave files unsorted.\n" ++
+        "  \x08-r\r            Reverse the order of the sort.\n" ++
+        "  \x08--dirsfirst\r   List directories before files (\x08-U\r disables).\n" ++
+        "  \x08--filesfirst\r  List files before directories (\x08-U\r disables).\n" ++
+        "  \x08--sort\r \x0CX\r      Select sort: \x08\x0Cname\r,\x08\x0Cversion\r,\x08\x0Csize\r,\x08\x0Cmtime\r,\x08\x0Cctime\r,\x08\x0Cnone\r.\n" ++
+        "  \x08------- Graphics options -------\r\n" ++
+        "  \x08-i\r            Don't print indentation lines.\n" ++
+        "  \x08-A\r            Print ANSI lines graphic indentation lines.\n" ++
+        "  \x08-S\r            Print with CP437 (console) graphics indentation lines.\n" ++
+        "  \x08-n\r            Turn colorization off always (\x08-C\r overrides).\n" ++
+        "  \x08-C\r            Turn colorization on always.\n" ++
+        "  \x08------- XML/HTML/JSON/HYPERLINK options -------\r\n" ++
+        "  \x08-X\r            Prints out an XML representation of the tree.\n" ++
+        "  \x08-J\r            Prints out an JSON representation of the tree.\n" ++
+        "  \x08-H\r \x0CbaseHREF\r   Prints out HTML format with \x0CbaseHREF\r as top directory.\n" ++
+        "  \x08-T\r \x0Cstring\r     Replace the default HTML title and H1 header with \x0Cstring\r.\n" ++
+        "  \x08--nolinks\r     Turn off hyperlinks in HTML output.\n" ++
+        "  \x08--hintro\r \x0CX\r    Use file \x0CX\r as the HTML intro.\n" ++
+        "  \x08--houtro\r \x0CX\r    Use file \x0CX\r as the HTML outro.\n" ++
+        "  \x08--hyperlink\r   Turn on OSC 8 terminal hyperlinks.\n" ++
+        "  \x08--scheme\r \x0CX\r    Set OSC 8 hyperlink scheme, default \x08\x0Cfile://\r\n" ++
+        "  \x08--authority\r \x0CX\r Set OSC 8 hyperlink authority/hostname.\n" ++
+        "  \x08------- Input options -------\r\n" ++
+        "  \x08--fromfile\r    Reads paths from files (\x08.\r=stdin)\n" ++
+        "  \x08--fromtabfile\r Reads trees from tab indented files (\x08.\r=stdin)\n" ++
+        "  \x08--fflinks\r     Process link information when using \x08--fromfile\r.\n" ++
+        "  \x08------- Miscellaneous options -------\r\n" ++
+        "  \x08--opt-toggle\r  Enable option toggling.\n" ++
+        "  \x08--version\r     Print version and exit.\n" ++
+        "  \x08--help\r        Print usage and this help message and exit.\n" ++
+        "  \x08--\r            Options processing terminator.\n"));
+    c.exit(0);
+}
+
+// file_getfulltree and tabedfile_getfulltree are defined in file.c
+extern fn file_getfulltree(d: [*c]u8, lev: c_ulong, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c]?*c.struct__info;
+extern fn tabedfile_getfulltree(d: [*c]u8, lev: c_ulong, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c]?*c.struct__info;
+
+fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
+    const builtin = @import("builtin");
+
+    var ig: ?*c.struct_ignorefile = undefined;
+    var inf_arg: ?*c.struct_infofile = undefined;
+    var dirname: [*c][*c]u8 = null;
+    var i: usize = 0;
+    var j: usize = 0;
+    var k: usize = 0;
+    var n: usize = 0;
+    var p: usize = 0;
+    var q: usize = 0;
+    var optf: bool = true;
+    var outfilename: [*c]u8 = null;
+    var arg: [*c]u8 = undefined;
+    var showversion: bool = false;
+    var opt_toggle: bool = false;
+
+    aflag = false; dflag = false; fflag = false; lflag = false;
+    pflag = false; sflag = false; Fflag = false; uflag = false; gflag = false;
+    Dflag = false; qflag = false; Nflag = false; Qflag = false; Rflag = false;
+    hflag = false; Hflag = false; siflag = false; cflag = false;
+    noindent = false; force_color = false; nocolor = false; xdev = false;
+    noreport = false; nolinks = false; reverse = false;
+    ignorecase = false; matchdirs = false; inodeflag = false; devflag = false;
+    Xflag = false; Jflag = false; fflinks = false;
+    duflag = false; pruneflag = false; metafirst = false;
+    gitignore = false; hyperflag = false; htmloffset = false;
+
+    flimit = 0;
+    dirs = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * @as(usize, @intCast(c.PATH_MAX))).?));
+    maxdirs = @intCast(c.PATH_MAX);
+    _ = c.memset(dirs, 0, @sizeOf(c_int) * maxdirs);
+    dirs[0] = 0;
+    Level = -1;
+
+    _ = c.setlocale(c.LC_CTYPE, "");
+    _ = c.setlocale(c.LC_COLLATE, "");
+
+    charset = c.getcharset();
+    if (charset == null and
+        (c.strcmp(c.nl_langinfo(c.CODESET), "UTF-8") == 0 or
+         c.strcmp(c.nl_langinfo(c.CODESET), "utf8") == 0))
+    {
+        charset = "UTF-8";
+    }
+
+    lc = .{
+        .intro   = c.null_intro,
+        .outtro  = c.null_outtro,
+        .printinfo  = c.unix_printinfo,
+        .printfile  = c.unix_printfile,
+        .@"error" = c.unix_error,
+        .newline = c.unix_newline,
+        .close   = c.null_close,
+        .report  = c.unix_report,
+    };
+
+    mb_cur_max = @intCast(c.__ctype_get_mb_cur_max());
+
+    if (comptime builtin.os.tag == .linux) {
+        const stddata_fd_env = c.getenv(c.ENV_STDDATA_FD);
+        if (stddata_fd_env != null) {
+            var std_fd: c_int = c.atoi(stddata_fd_env);
+            if (std_fd <= 0) std_fd = c.STDDATA_FILENO;
+            if (c.fcntl(std_fd, c.F_GETFD) >= 0) {
+                Jflag = true;
+                noindent = true;
+                var nl_empty = "".*;
+                _nl = @ptrCast(&nl_empty);
+                lc = .{
+                    .intro   = c.json_intro,
+                    .outtro  = c.json_outtro,
+                    .printinfo  = c.json_printinfo,
+                    .printfile  = c.json_printfile,
+                    .@"error" = c.json_error,
+                    .newline = c.json_newline,
+                    .close   = c.json_close,
+                    .report  = c.json_report,
+                };
+                outfile = c.fdopen(std_fd, "w");
+            }
+        }
+    }
+
+    _ = c.memset(@ptrCast(&utable), 0, @sizeOf(@TypeOf(utable)));
+    _ = c.memset(@ptrCast(&gtable), 0, @sizeOf(@TypeOf(gtable)));
+    _ = c.memset(@ptrCast(&itable), 0, @sizeOf(@TypeOf(itable)));
+
+    n = 1;
+    i = 1;
+    while (i < @as(usize, @intCast(argc))) : (i = n) {
+        n += 1;
+        if (optf and argv[i][0] == '-' and argv[i][1] != 0) {
+            j = 1;
+            while (argv[i][j] != 0) : (j += 1) {
+                switch (argv[i][j]) {
+                    'N' => Nflag = if (opt_toggle) !Nflag else true,
+                    'q' => qflag = if (opt_toggle) !qflag else true,
+                    'Q' => Qflag = if (opt_toggle) !Qflag else true,
+                    'd' => dflag = if (opt_toggle) !dflag else true,
+                    'l' => lflag = if (opt_toggle) !lflag else true,
+                    's' => sflag = if (opt_toggle) !sflag else true,
+                    'h' => { sflag = if (opt_toggle) !hflag else true; hflag = sflag; },
+                    'u' => uflag = if (opt_toggle) !uflag else true,
+                    'g' => gflag = if (opt_toggle) !gflag else true,
+                    'f' => fflag = if (opt_toggle) !fflag else true,
+                    'F' => Fflag = if (opt_toggle) !Fflag else true,
+                    'a' => aflag = if (opt_toggle) !aflag else true,
+                    'p' => pflag = if (opt_toggle) !pflag else true,
+                    'i' => { noindent = if (opt_toggle) !noindent else true; _nl = @constCast(""); },
+                    'C' => force_color = if (opt_toggle) !force_color else true,
+                    'n' => nocolor = if (opt_toggle) !nocolor else true,
+                    'x' => xdev = if (opt_toggle) !xdev else true,
+                    'P' => {
+                        if (argv[n] == null) {
+                            _ = c.fprintf(c.stderr, "tree: Missing argument to -P option.\n");
+                            c.exit(1);
+                        }
+                        if (pattern >= maxpattern - 1) patterns = @ptrCast(@alignCast(xrealloc(@ptrCast(patterns), @sizeOf([*c]u8) * @as(usize, @intCast(maxpattern + 10))).?));
+                        maxpattern += 10;
+                        patterns[@intCast(pattern)] = argv[n];
+                        pattern += 1;
+                        n += 1;
+                        patterns[@intCast(pattern)] = null;
+                    },
+                    'I' => {
+                        if (argv[n] == null) {
+                            _ = c.fprintf(c.stderr, "tree: Missing argument to -I option.\n");
+                            c.exit(1);
+                        }
+                        if (ipattern >= maxipattern - 1) ipatterns = @ptrCast(@alignCast(xrealloc(@ptrCast(ipatterns), @sizeOf([*c]u8) * @as(usize, @intCast(maxipattern + 10))).?));
+                        maxipattern += 10;
+                        ipatterns[@intCast(ipattern)] = argv[n];
+                        ipattern += 1;
+                        n += 1;
+                        ipatterns[@intCast(ipattern)] = null;
+                    },
+                    'A' => ansilines = if (opt_toggle) !ansilines else true,
+                    'S' => charset = "IBM437",
+                    'D' => Dflag = if (opt_toggle) !Dflag else true,
+                    't' => basesort = &mtimesort,
+                    'c' => { basesort = &ctimesort; cflag = true; },
+                    'r' => reverse = if (opt_toggle) !reverse else true,
+                    'v' => basesort = &versort,
+                    'U' => basesort = null,
+                    'X' => {
+                        Xflag = true; Hflag = false; Jflag = false;
+                        lc = .{ .intro = c.xml_intro, .outtro = c.xml_outtro, .printinfo = c.xml_printinfo, .printfile = c.xml_printfile, .@"error" = c.xml_error, .newline = c.xml_newline, .close = c.xml_close, .report = c.xml_report };
+                    },
+                    'J' => {
+                        Jflag = true; Xflag = false; Hflag = false;
+                        lc = .{ .intro = c.json_intro, .outtro = c.json_outtro, .printinfo = c.json_printinfo, .printfile = c.json_printfile, .@"error" = c.json_error, .newline = c.json_newline, .close = c.json_close, .report = c.json_report };
+                    },
+                    'H' => {
+                        Hflag = true; Xflag = false; Jflag = false;
+                        lc = .{ .intro = c.html_intro, .outtro = c.html_outtro, .printinfo = c.html_printinfo, .printfile = c.html_printfile, .@"error" = c.html_error, .newline = c.html_newline, .close = c.html_close, .report = c.html_report };
+                        if (argv[n] == null) {
+                            _ = c.fprintf(c.stderr, "tree: Missing argument to -H option.\n");
+                            c.exit(1);
+                        }
+                        host = argv[n];
+                        n += 1;
+                        if (host[0] == '-') { htmloffset = true; host += 1; }
+                        sp = @constCast("&nbsp;");
+                    },
+                    'T' => {
+                        if (argv[n] == null) {
+                            _ = c.fprintf(c.stderr, "tree: Missing argument to -T option.\n");
+                            c.exit(1);
+                        }
+                        title = argv[n];
+                        n += 1;
+                    },
+                    'R' => Rflag = if (opt_toggle) !Rflag else true,
+                    'L' => {
+                        if (c.isdigit(argv[i][j + 1]) != 0) {
+                            k = 0;
+                            while (argv[i][j + 1 + k] != 0 and c.isdigit(argv[i][j + 1 + k]) != 0 and k < c.PATH_MAX - 1) : (k += 1) {
+                                xpattern[k] = argv[i][j + 1 + k];
+                            }
+                            xpattern[k] = 0;
+                            j += k;
+                            sLevel = &xpattern;
+                        } else {
+                            sLevel = argv[n];
+                            n += 1;
+                            if (sLevel == null) {
+                                _ = c.fprintf(c.stderr, "tree: Missing argument to -L option.\n");
+                                c.exit(1);
+                            }
+                        }
+                        Level = @as(isize, @intCast(c.strtoul(sLevel, null, 0))) - 1;
+                        if (Level < 0) {
+                            _ = c.fprintf(c.stderr, "tree: Invalid level, must be greater than 0.\n");
+                            c.exit(1);
+                        }
+                    },
+                    'o' => {
+                        if (argv[n] == null) {
+                            _ = c.fprintf(c.stderr, "tree: Missing argument to -o option.\n");
+                            c.exit(1);
+                        }
+                        outfilename = argv[n];
+                        n += 1;
+                    },
+                    '-' => {
+                        if (j == 1) {
+                            if (c.strcmp("--", argv[i]) == 0) { optf = false; break; }
+                            if (c.strcmp("--help", argv[i]) == 0) { usage(2); c.exit(0); }
+                            if (c.strcmp("--version", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                showversion = true;
+                                break;
+                            }
+                            if (c.strcmp("--inodes", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                inodeflag = if (opt_toggle) !inodeflag else true;
+                                break;
+                            }
+                            if (c.strcmp("--device", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                devflag = if (opt_toggle) !devflag else true;
+                                break;
+                            }
+                            if (c.strcmp("--noreport", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                noreport = if (opt_toggle) !noreport else true;
+                                break;
+                            }
+                            if (c.strcmp("--nolinks", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                nolinks = if (opt_toggle) !nolinks else true;
+                                break;
+                            }
+                            if (c.strcmp("--dirsfirst", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                topsort = &dirsfirst;
+                                break;
+                            }
+                            if (c.strcmp("--filesfirst", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                topsort = &filesfirst;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--filelimit");
+                            if (arg != null) { flimit = c.atoi(arg); break; }
+                            arg = longArg(argv, i, &j, &n, "--charset");
+                            if (arg != null) { charset = arg; break; }
+                            if (c.strcmp("--si", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                sflag = if (opt_toggle) !siflag else true;
+                                hflag = sflag; siflag = sflag;
+                                break;
+                            }
+                            if (c.strcmp("--du", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                sflag = if (opt_toggle) !duflag else true;
+                                duflag = sflag;
+                                break;
+                            }
+                            if (c.strcmp("--prune", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                pruneflag = if (opt_toggle) !pruneflag else true;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--timefmt");
+                            if (arg != null) { timefmt = scopy(arg); Dflag = true; break; }
+                            if (c.strcmp("--ignore-case", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                ignorecase = if (opt_toggle) !ignorecase else true;
+                                break;
+                            }
+                            if (c.strcmp("--matchdirs", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                matchdirs = if (opt_toggle) !matchdirs else true;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--sort");
+                            if (arg != null) {
+                                basesort = null;
+                                k = 0;
+                                while (sorts[k].name != null) : (k += 1) {
+                                    if (c.strcasecmp(sorts[k].name, arg) == 0) {
+                                        basesort = sorts[k].cmpfunc;
+                                        break;
+                                    }
+                                }
+                                if (sorts[k].name == null) {
+                                    _ = c.fprintf(c.stderr, "tree: Sort type '%s' not valid, should be one of: ", arg);
+                                    k = 0;
+                                    while (sorts[k].name != null) : (k += 1) {
+                                        _ = c.printf("%s%c", sorts[k].name, @as(c_int, if (sorts[k + 1].name != null) ',' else '\n'));
+                                    }
+                                    c.exit(1);
+                                }
+                                break;
+                            }
+                            if (c.strcmp("--fromtabfile", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                fromfile = true;
+                                getfulltree = &tabedfile_getfulltree;
+                                break;
+                            }
+                            if (c.strcmp("--fromfile", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                fromfile = true;
+                                getfulltree = &file_getfulltree;
+                                break;
+                            }
+                            if (c.strcmp("--metafirst", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                metafirst = if (opt_toggle) !metafirst else true;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--gitfile");
+                            if (arg != null) {
+                                gitignore = true;
+                                ig = c.new_ignorefile(arg, false);
+                                if (ig != null) c.push_filterstack(ig) else {
+                                    _ = c.fprintf(c.stderr, "tree: Could not load gitignore file\n");
+                                    c.exit(1);
+                                }
+                                break;
+                            }
+                            if (c.strcmp("--gitignore", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                gitignore = if (opt_toggle) !gitignore else true;
+                                break;
+                            }
+                            if (c.strcmp("--info", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                showinfo = if (opt_toggle) !showinfo else true;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--infofile");
+                            if (arg != null) {
+                                showinfo = true;
+                                inf_arg = c.new_infofile(arg, false);
+                                if (inf_arg != null) c.push_infostack(inf_arg) else {
+                                    _ = c.fprintf(c.stderr, "tree: Could not load infofile\n");
+                                    c.exit(1);
+                                }
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--hintro");
+                            if (arg != null) { Hintro = scopy(arg); break; }
+                            arg = longArg(argv, i, &j, &n, "--houtro");
+                            if (arg != null) { Houtro = scopy(arg); break; }
+                            if (c.strcmp("--fflinks", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                fflinks = if (opt_toggle) !fflinks else true;
+                                break;
+                            }
+                            if (c.strcmp("--hyperlink", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                hyperflag = if (opt_toggle) !hyperflag else true;
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--scheme");
+                            if (arg != null) {
+                                if (c.strchr(arg, ':') == null) {
+                                    _ = c.sprintf(&xpattern, "%s://", arg);
+                                    arg = scopy(&xpattern);
+                                } else scheme = scopy(arg);
+                                break;
+                            }
+                            arg = longArg(argv, i, &j, &n, "--authority");
+                            if (arg != null) {
+                                authority = if (c.strcmp(arg, ".") == 0) scopy("") else scopy(arg);
+                                break;
+                            }
+                            if (c.strcmp("--opt-toggle", argv[i]) == 0) {
+                                j = c.strlen(argv[i]) - 1;
+                                opt_toggle = !opt_toggle;
+                                break;
+                            }
+                            _ = c.fprintf(c.stderr, "tree: Invalid argument `%s'.\n", argv[i]);
+                            usage(1);
+                            c.exit(1);
+                        }
+                        // fall through to default
+                        _ = c.fprintf(c.stderr, "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
+                        usage(1);
+                        c.exit(1);
+                    },
+                    else => {
+                        _ = c.fprintf(c.stderr, "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
+                        usage(1);
+                        c.exit(1);
+                    },
+                }
+            }
+        } else {
+            if (dirname == null) {
+                q = c.MINIT;
+                dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * q).?));
+            } else if (p == q - 2) {
+                q += c.MINC;
+                dirname = @ptrCast(@alignCast(xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * q).?));
+            }
+            dirname[p] = scopy(argv[i]);
+            p += 1;
+        }
+    }
+    if (p > 0) dirname[p] = null;
+
+    setoutput(outfilename);
+    c.parse_dir_colors();
+    c.initlinedraw(false);
+
+    if (showversion) { print_version(1); c.exit(0); }
+
+    if (dirname == null) {
+        dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * 2).?));
+        dirname[0] = scopy(".");
+        dirname[1] = null;
+    }
+    if (topsort == null) topsort = basesort;
+    if (basesort == null) topsort = null;
+    if (timefmt != null) _ = c.setlocale(c.LC_TIME, "");
+    if (dflag) pruneflag = false;
+    if (Rflag and Level == -1) Rflag = false;
+
+    if (hyperflag and authority == null) {
+        if (c.gethostname(&xpattern, c.PATH_MAX) < 0) {
+            _ = c.fprintf(c.stderr, "Unable to get hostname, using 'localhost'.\n");
+            authority = @constCast("localhost");
+        } else authority = scopy(&xpattern);
+    }
+
+    if (gitignore) {
+        const git_dir = c.getenv("GIT_DIR");
+        if (git_dir != null) {
+            const path: [*c]u8 = @ptrCast(xmalloc(@intCast(c.PATH_MAX)).?);
+            _ = c.snprintf(path, @intCast(c.PATH_MAX), "%s/info/exclude", git_dir);
+            c.push_filterstack(c.new_ignorefile(path, false));
+            c.free(path);
+        }
+    }
+    if (showinfo) {
+        c.push_infostack(c.new_infofile(c.INFO_PATH, false));
+    }
+
+    const needfulltree: bool = duflag or pruneflag or matchdirs or fromfile;
+    c.emit_tree(dirname, needfulltree);
+
+    if (outfilename != null) _ = c.fclose(outfile);
+
+    return if (errors != 0) 2 else 0;
+}
+
+// ----------------------------------------------------------------------------
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
@@ -947,16 +1559,15 @@ pub fn main() !u8 {
         return 0;
     }
 
-    // Otherwise call C, must convert [:0]const u8 slice to [*:0]u8 for C
-    var c_args = try allocator.alloc([*:0]u8, args.len);
+    // Convert [][:0]u8 → null-terminated [*c][*c]u8 (C char**) for treeMain
+    var c_args = try allocator.alloc([*c]u8, args.len + 1);
     defer allocator.free(c_args);
 
-    for (args, 0..) |arg, i| {
-        c_args[i] = arg.ptr;
-    }
+    for (args, 0..) |arg, i| c_args[i] = arg.ptr;
+    c_args[args.len] = null; // C-style argv sentinel
 
     const c_argc: c_int = @intCast(args.len);
-    const result = tree_main(c_argc, c_args.ptr);
+    const result = treeMain(c_argc, c_args.ptr);
 
     return if (result >= 0) @intCast(result) else 1;
 }
