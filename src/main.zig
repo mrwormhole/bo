@@ -257,7 +257,10 @@ fn patMatchSlice(buf_in: []const u8, pat_in: []const u8, isdir: bool) c_int {
                     while (buf.len > 0) {
                         const m = patMatchSlice(buf, pat, isdir);
                         buf = buf[1..]; // mirrors C's buf++ in loop condition
-                        if (m != 0) { match = m; break; }
+                        if (m != 0) {
+                            match = m;
+                            break;
+                        }
                         if (buf.len > 0 and buf[0] == '/') break;
                     }
                 }
@@ -627,18 +630,18 @@ var stat2info_buf: c.struct__info = std.mem.zeroes(c.struct__info);
 export fn stat2info(st: ?*const c.struct_stat) ?*c.struct__info {
     const s = st.?;
     stat2info_buf.linode = s.st_ino;
-    stat2info_buf.ldev   = s.st_dev;
-    stat2info_buf.mode   = s.st_mode;
-    stat2info_buf.uid    = s.st_uid;
-    stat2info_buf.gid    = s.st_gid;
-    stat2info_buf.size   = s.st_size;
-    stat2info_buf.atime  = statAtime(s);
-    stat2info_buf.ctime  = statCtime(s);
-    stat2info_buf.mtime  = statMtime(s);
-    stat2info_buf.isdir  = (s.st_mode & c.S_IFMT) == c.S_IFDIR;
-    stat2info_buf.issok  = (s.st_mode & c.S_IFMT) == c.S_IFSOCK;
+    stat2info_buf.ldev = s.st_dev;
+    stat2info_buf.mode = s.st_mode;
+    stat2info_buf.uid = s.st_uid;
+    stat2info_buf.gid = s.st_gid;
+    stat2info_buf.size = s.st_size;
+    stat2info_buf.atime = statAtime(s);
+    stat2info_buf.ctime = statCtime(s);
+    stat2info_buf.mtime = statMtime(s);
+    stat2info_buf.isdir = (s.st_mode & c.S_IFMT) == c.S_IFDIR;
+    stat2info_buf.issok = (s.st_mode & c.S_IFMT) == c.S_IFSOCK;
     stat2info_buf.isfifo = (s.st_mode & c.S_IFMT) == c.S_IFIFO;
-    stat2info_buf.isexe  = (s.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
+    stat2info_buf.isexe = (s.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
     return &stat2info_buf;
 }
 
@@ -663,8 +666,8 @@ export fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
     } else {
         rs = 0;
         st.st_mode = lst.st_mode;
-        st.st_dev  = lst.st_dev;
-        st.st_ino  = lst.st_ino;
+        st.st_dev = lst.st_dev;
+        st.st_ino = lst.st_ino;
     }
 
     const isdir: bool = (st.st_mode & c.S_IFMT) == c.S_IFDIR;
@@ -681,26 +684,26 @@ export fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
     const ent: *c.struct__info = @ptrCast(@alignCast(xmalloc(@sizeOf(c.struct__info)).?));
     _ = c.memset(ent, 0, @sizeOf(c.struct__info));
 
-    ent.name   = scopy(name);
-    ent.mode   = lst.st_mode;
-    ent.uid    = lst.st_uid;
-    ent.gid    = lst.st_gid;
-    ent.size   = lst.st_size;
-    ent.dev    = st.st_dev;
-    ent.inode  = st.st_ino;
-    ent.ldev   = lst.st_dev;
+    ent.name = scopy(name);
+    ent.mode = lst.st_mode;
+    ent.uid = lst.st_uid;
+    ent.gid = lst.st_gid;
+    ent.size = lst.st_size;
+    ent.dev = st.st_dev;
+    ent.inode = st.st_ino;
+    ent.ldev = lst.st_dev;
     ent.linode = lst.st_ino;
-    ent.lnk    = null;
+    ent.lnk = null;
     ent.orphan = false;
-    ent.err    = null;
-    ent.child  = null;
-    ent.atime  = statAtime(&lst);
-    ent.ctime  = statCtime(&lst);
-    ent.mtime  = statMtime(&lst);
-    ent.isdir  = isdir;
-    ent.issok  = (st.st_mode & c.S_IFMT) == c.S_IFSOCK;
+    ent.err = null;
+    ent.child = null;
+    ent.atime = statAtime(&lst);
+    ent.ctime = statCtime(&lst);
+    ent.mtime = statMtime(&lst);
+    ent.isdir = isdir;
+    ent.issok = (st.st_mode & c.S_IFMT) == c.S_IFSOCK;
     ent.isfifo = (st.st_mode & c.S_IFMT) == c.S_IFIFO;
-    ent.isexe  = (st.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
+    ent.isexe = (st.st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
 
     if ((lst.st_mode & c.S_IFMT) == c.S_IFLNK) {
         const lsz: usize = @intCast(lst.st_size);
@@ -710,12 +713,12 @@ export fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
         }
         const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
         if (len < 0) {
-            ent.lnk    = scopy("[Error reading symbolic link information]");
-            ent.isdir  = false;
+            ent.lnk = scopy("[Error reading symbolic link information]");
+            ent.isdir = false;
             ent.lnkmode = st.st_mode;
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk     = scopy(getinfo_lbuf);
+            ent.lnk = scopy(getinfo_lbuf);
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = st.st_mode;
         }
@@ -953,13 +956,13 @@ const Sort = struct {
     cmpfunc: ?*const SortFn,
 };
 const sorts = [_]Sort{
-    .{ .name = "name",    .cmpfunc = &alnumsort },
+    .{ .name = "name", .cmpfunc = &alnumsort },
     .{ .name = "version", .cmpfunc = &versort },
-    .{ .name = "size",    .cmpfunc = &fsizesort },
-    .{ .name = "mtime",   .cmpfunc = &mtimesort },
-    .{ .name = "ctime",   .cmpfunc = &ctimesort },
-    .{ .name = "none",    .cmpfunc = null },
-    .{ .name = null,      .cmpfunc = null },
+    .{ .name = "size", .cmpfunc = &fsizesort },
+    .{ .name = "mtime", .cmpfunc = &mtimesort },
+    .{ .name = "ctime", .cmpfunc = &ctimesort },
+    .{ .name = "none", .cmpfunc = null },
+    .{ .name = null, .cmpfunc = null },
 };
 
 fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*:0]const u8) [*c]u8 {
@@ -993,8 +996,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*:0]const 
 export fn usage(n: c_int) void {
     c.parse_dir_colors();
     c.initlinedraw(false);
-    c.fancy(if (n < 2) c.stderr else c.stdout, @constCast(
-        "usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0Clevel\r [\x08-R\r]] [\x08-H\r [-]\x0CbaseHREF\r]\n" ++
+    c.fancy(if (n < 2) c.stderr else c.stdout, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0Clevel\r [\x08-R\r]] [\x08-H\r [-]\x0CbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0Ctitle\r] [\x08-o\r \x0Cfilename\r] [\x08-P\r \x0Cpattern\r] [\x08-I\r \x0Cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0Cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0Cfile\r] [\x08--houtro\r[\x08=\r]\x0Cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -1004,8 +1006,7 @@ export fn usage(n: c_int) void {
         "\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0Cschema\r] [\x08--authority\r[\x08=\r]\x0Chost\r] [\x08--opt-toggle\r]\n" ++
         "\t[\x08--version\r] [\x08--help\r] [\x08--\r] [\x0Cdirectory\r \x08...\r]\n"));
     if (n < 2) return;
-    c.fancy(c.stdout, @constCast(
-        "  \x08------- Listing options -------\r\n" ++
+    c.fancy(c.stdout, @constCast("  \x08------- Listing options -------\r\n" ++
         "  \x08-a\r            All files are listed.\n" ++
         "  \x08-d\r            List directories only.\n" ++
         "  \x08-l\r            Follow symbolic links like directories.\n" ++
@@ -1043,8 +1044,7 @@ export fn usage(n: c_int) void {
         "  \x08-F\r            Appends '\x08/\r', '\x08=\r', '\x08*\r', '\x08@\r', '\x08|\r' or '\x08>\r' as per \x08ls -F\r.\n" ++
         "  \x08--inodes\r      Print inode number of each file.\n" ++
         "  \x08--device\r      Print device ID number to which each file belongs.\n"));
-    c.fancy(c.stdout, @constCast(
-        "  \x08------- Sorting options -------\r\n" ++
+    c.fancy(c.stdout, @constCast("  \x08------- Sorting options -------\r\n" ++
         "  \x08-v\r            Sort files alphanumerically by version.\n" ++
         "  \x08-t\r            Sort files by last modification time.\n" ++
         "  \x08-c\r            Sort files by last status change time.\n" ++
@@ -1104,16 +1104,44 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
     var showversion: bool = false;
     var opt_toggle: bool = false;
 
-    aflag = false; dflag = false; fflag = false; lflag = false;
-    pflag = false; sflag = false; Fflag = false; uflag = false; gflag = false;
-    Dflag = false; qflag = false; Nflag = false; Qflag = false; Rflag = false;
-    hflag = false; Hflag = false; siflag = false; cflag = false;
-    noindent = false; force_color = false; nocolor = false; xdev = false;
-    noreport = false; nolinks = false; reverse = false;
-    ignorecase = false; matchdirs = false; inodeflag = false; devflag = false;
-    Xflag = false; Jflag = false; fflinks = false;
-    duflag = false; pruneflag = false; metafirst = false;
-    gitignore = false; hyperflag = false; htmloffset = false;
+    aflag = false;
+    dflag = false;
+    fflag = false;
+    lflag = false;
+    pflag = false;
+    sflag = false;
+    Fflag = false;
+    uflag = false;
+    gflag = false;
+    Dflag = false;
+    qflag = false;
+    Nflag = false;
+    Qflag = false;
+    Rflag = false;
+    hflag = false;
+    Hflag = false;
+    siflag = false;
+    cflag = false;
+    noindent = false;
+    force_color = false;
+    nocolor = false;
+    xdev = false;
+    noreport = false;
+    nolinks = false;
+    reverse = false;
+    ignorecase = false;
+    matchdirs = false;
+    inodeflag = false;
+    devflag = false;
+    Xflag = false;
+    Jflag = false;
+    fflinks = false;
+    duflag = false;
+    pruneflag = false;
+    metafirst = false;
+    gitignore = false;
+    hyperflag = false;
+    htmloffset = false;
 
     flimit = 0;
     dirs = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * @as(usize, @intCast(c.PATH_MAX))).?));
@@ -1128,20 +1156,20 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
     charset = c.getcharset();
     if (charset == null and
         (c.strcmp(c.nl_langinfo(c.CODESET), "UTF-8") == 0 or
-         c.strcmp(c.nl_langinfo(c.CODESET), "utf8") == 0))
+            c.strcmp(c.nl_langinfo(c.CODESET), "utf8") == 0))
     {
         charset = "UTF-8";
     }
 
     lc = .{
-        .intro   = c.null_intro,
-        .outtro  = c.null_outtro,
-        .printinfo  = c.unix_printinfo,
-        .printfile  = c.unix_printfile,
+        .intro = c.null_intro,
+        .outtro = c.null_outtro,
+        .printinfo = c.unix_printinfo,
+        .printfile = c.unix_printfile,
         .@"error" = c.unix_error,
         .newline = c.unix_newline,
-        .close   = c.null_close,
-        .report  = c.unix_report,
+        .close = c.null_close,
+        .report = c.unix_report,
     };
 
     mb_cur_max = @intCast(c.__ctype_get_mb_cur_max());
@@ -1157,14 +1185,14 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                 var nl_empty = "".*;
                 _nl = @ptrCast(&nl_empty);
                 lc = .{
-                    .intro   = c.json_intro,
-                    .outtro  = c.json_outtro,
-                    .printinfo  = c.json_printinfo,
-                    .printfile  = c.json_printfile,
+                    .intro = c.json_intro,
+                    .outtro = c.json_outtro,
+                    .printinfo = c.json_printinfo,
+                    .printfile = c.json_printfile,
                     .@"error" = c.json_error,
                     .newline = c.json_newline,
-                    .close   = c.json_close,
-                    .report  = c.json_report,
+                    .close = c.json_close,
+                    .report = c.json_report,
                 };
                 outfile = c.fdopen(std_fd, "w");
             }
@@ -1189,14 +1217,20 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                     'd' => dflag = if (opt_toggle) !dflag else true,
                     'l' => lflag = if (opt_toggle) !lflag else true,
                     's' => sflag = if (opt_toggle) !sflag else true,
-                    'h' => { sflag = if (opt_toggle) !hflag else true; hflag = sflag; },
+                    'h' => {
+                        sflag = if (opt_toggle) !hflag else true;
+                        hflag = sflag;
+                    },
                     'u' => uflag = if (opt_toggle) !uflag else true,
                     'g' => gflag = if (opt_toggle) !gflag else true,
                     'f' => fflag = if (opt_toggle) !fflag else true,
                     'F' => Fflag = if (opt_toggle) !Fflag else true,
                     'a' => aflag = if (opt_toggle) !aflag else true,
                     'p' => pflag = if (opt_toggle) !pflag else true,
-                    'i' => { noindent = if (opt_toggle) !noindent else true; _nl = @constCast(""); },
+                    'i' => {
+                        noindent = if (opt_toggle) !noindent else true;
+                        _nl = @constCast("");
+                    },
                     'C' => force_color = if (opt_toggle) !force_color else true,
                     'n' => nocolor = if (opt_toggle) !nocolor else true,
                     'x' => xdev = if (opt_toggle) !xdev else true,
@@ -1228,20 +1262,29 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                     'S' => charset = "IBM437",
                     'D' => Dflag = if (opt_toggle) !Dflag else true,
                     't' => basesort = &mtimesort,
-                    'c' => { basesort = &ctimesort; cflag = true; },
+                    'c' => {
+                        basesort = &ctimesort;
+                        cflag = true;
+                    },
                     'r' => reverse = if (opt_toggle) !reverse else true,
                     'v' => basesort = &versort,
                     'U' => basesort = null,
                     'X' => {
-                        Xflag = true; Hflag = false; Jflag = false;
+                        Xflag = true;
+                        Hflag = false;
+                        Jflag = false;
                         lc = .{ .intro = c.xml_intro, .outtro = c.xml_outtro, .printinfo = c.xml_printinfo, .printfile = c.xml_printfile, .@"error" = c.xml_error, .newline = c.xml_newline, .close = c.xml_close, .report = c.xml_report };
                     },
                     'J' => {
-                        Jflag = true; Xflag = false; Hflag = false;
+                        Jflag = true;
+                        Xflag = false;
+                        Hflag = false;
                         lc = .{ .intro = c.json_intro, .outtro = c.json_outtro, .printinfo = c.json_printinfo, .printfile = c.json_printfile, .@"error" = c.json_error, .newline = c.json_newline, .close = c.json_close, .report = c.json_report };
                     },
                     'H' => {
-                        Hflag = true; Xflag = false; Jflag = false;
+                        Hflag = true;
+                        Xflag = false;
+                        Jflag = false;
                         lc = .{ .intro = c.html_intro, .outtro = c.html_outtro, .printinfo = c.html_printinfo, .printfile = c.html_printfile, .@"error" = c.html_error, .newline = c.html_newline, .close = c.html_close, .report = c.html_report };
                         if (argv[n] == null) {
                             _ = c.fprintf(c.stderr, "tree: Missing argument to -H option.\n");
@@ -1249,7 +1292,10 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                         }
                         host = argv[n];
                         n += 1;
-                        if (host[0] == '-') { htmloffset = true; host += 1; }
+                        if (host[0] == '-') {
+                            htmloffset = true;
+                            host += 1;
+                        }
                         sp = @constCast("&nbsp;");
                     },
                     'T' => {
@@ -1294,8 +1340,14 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                     },
                     '-' => {
                         if (j == 1) {
-                            if (c.strcmp("--", argv[i]) == 0) { optf = false; break; }
-                            if (c.strcmp("--help", argv[i]) == 0) { usage(2); c.exit(0); }
+                            if (c.strcmp("--", argv[i]) == 0) {
+                                optf = false;
+                                break;
+                            }
+                            if (c.strcmp("--help", argv[i]) == 0) {
+                                usage(2);
+                                c.exit(0);
+                            }
                             if (c.strcmp("--version", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 showversion = true;
@@ -1332,13 +1384,20 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--filelimit");
-                            if (arg != null) { flimit = c.atoi(arg); break; }
+                            if (arg != null) {
+                                flimit = c.atoi(arg);
+                                break;
+                            }
                             arg = longArg(argv, i, &j, &n, "--charset");
-                            if (arg != null) { charset = arg; break; }
+                            if (arg != null) {
+                                charset = arg;
+                                break;
+                            }
                             if (c.strcmp("--si", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 sflag = if (opt_toggle) !siflag else true;
-                                hflag = sflag; siflag = sflag;
+                                hflag = sflag;
+                                siflag = sflag;
                                 break;
                             }
                             if (c.strcmp("--du", argv[i]) == 0) {
@@ -1353,7 +1412,11 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--timefmt");
-                            if (arg != null) { timefmt = scopy(arg); Dflag = true; break; }
+                            if (arg != null) {
+                                timefmt = scopy(arg);
+                                Dflag = true;
+                                break;
+                            }
                             if (c.strcmp("--ignore-case", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 ignorecase = if (opt_toggle) !ignorecase else true;
@@ -1432,9 +1495,15 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--hintro");
-                            if (arg != null) { Hintro = scopy(arg); break; }
+                            if (arg != null) {
+                                Hintro = scopy(arg);
+                                break;
+                            }
                             arg = longArg(argv, i, &j, &n, "--houtro");
-                            if (arg != null) { Houtro = scopy(arg); break; }
+                            if (arg != null) {
+                                Houtro = scopy(arg);
+                                break;
+                            }
                             if (c.strcmp("--fflinks", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 fflinks = if (opt_toggle) !fflinks else true;
@@ -1497,7 +1566,10 @@ fn treeMain(argc: c_int, argv: [*c][*c]u8) c_int {
     c.parse_dir_colors();
     c.initlinedraw(false);
 
-    if (showversion) { print_version(1); c.exit(0); }
+    if (showversion) {
+        print_version(1);
+        c.exit(0);
+    }
 
     if (dirname == null) {
         dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * 2).?));
