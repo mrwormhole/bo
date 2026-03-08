@@ -16,7 +16,6 @@ pub fn build(b: *std.Build) void {
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
     const common_sources = [_][]const u8{
-        "tree.c",
         "list.c",
         "hash.c",
         "color.c",
@@ -29,7 +28,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "html.c",
     };
 
-    var sources_buf: [11][]const u8 = undefined;
+    var sources_buf: [10][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -45,6 +44,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
             .optimize = optimize,
         }),
     });
+
+    // Allow @cImport("tree.h") in Zig source files to resolve against the
+    // project root where tree.h lives.
+    exe.addIncludePath(b.path("."));
 
     const sources = sources_buf[0..num_sources];
     const cflags = &[_][]const u8{
