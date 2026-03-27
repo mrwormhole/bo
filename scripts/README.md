@@ -1,5 +1,13 @@
 # Scripts
 
+## Interop Test
+
+Compare `bo` output against `tree` across a set of flags using a deterministic fixture:
+
+```bash
+./scripts/interop.py tree ./zig-out/bin/bo
+```
+
 ## Verify Man Page
 
 Verify that the embedded man page matches the original groff-formatted output:
