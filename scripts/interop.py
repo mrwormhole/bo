@@ -41,22 +41,28 @@ def run(cmd: list[str]) -> str:
     return result.stdout
 
 
-# Each entry: (description, extra_flags)
+# Each entry: (description, extra_flags, indent_insensitive)
 # Flags that are stable across tree versions and don't expose machine-specific
 # data (uid/gid, sizes, timestamps) are safe to compare exactly.
+# indent_insensitive=True strips leading whitespace before comparing — used for
+# JSON/XML where indentation width changed between tree 2.3.1 and 2.3.2.
 CASES = [
-    ("basic listing",            []),
-    ("dirs only (-d)",           ["-d"]),
-    ("depth limit (-L 1)",       ["-L", "1"]),
-    ("depth limit (-L 2)",       ["-L", "2"]),
-    ("all files (-a)",           ["-a"]),
-    ("full path (-f)",           ["-f"]),
-    ("no indentation (-i)",      ["-i"]),
-    ("JSON output (-J)",         ["-J"]),
-    ("XML output (-X)",          ["-X"]),
-    ("sort reverse (-r)",        ["-r"]),
-    ("dirs first (--dirsfirst)", ["--dirsfirst"]),
+    ("basic listing",            [],          False),
+    ("dirs only (-d)",           ["-d"],      False),
+    ("depth limit (-L 1)",       ["-L", "1"], False),
+    ("depth limit (-L 2)",       ["-L", "2"], False),
+    ("all files (-a)",           ["-a"],      False),
+    ("full path (-f)",           ["-f"],      False),
+    ("no indentation (-i)",      ["-i"],      False),
+    ("JSON output (-J)",         ["-J"],      True),
+    ("XML output (-X)",          ["-X"],      True),
+    ("sort reverse (-r)",        ["-r"],      False),
+    ("dirs first (--dirsfirst)", ["--dirsfirst"], False),
 ]
+
+
+def strip_indent(output: str) -> str:
+    return "\n".join(line.lstrip() for line in output.splitlines())
 
 
 def main() -> int:
@@ -71,13 +77,17 @@ def main() -> int:
     with tempfile.TemporaryDirectory(dir=tmpfs) as tmp:
         build_fixture(tmp)
 
-        for desc, flags in CASES:
+        for desc, flags, indent_insensitive in CASES:
             tree_out = run([tree_bin,  *flags, "--noreport", tmp])
             bo_out   = run([bo_bin,    *flags, "--noreport", tmp])
 
             # Normalise absolute tmp path so output is path-independent
             tree_out = tree_out.replace(tmp, "<ROOT>")
             bo_out   = bo_out.replace(tmp, "<ROOT>")
+
+            if indent_insensitive:
+                tree_out = strip_indent(tree_out)
+                bo_out   = strip_indent(bo_out)
 
             if tree_out == bo_out:
                 print(f"  {PASS}  {desc}")
