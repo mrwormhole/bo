@@ -27,9 +27,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "xml.c",
         "json.c",
         "html.c",
+        "util.c",
     };
 
-    var sources_buf: [11][]const u8 = undefined;
+    var sources_buf: [12][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {

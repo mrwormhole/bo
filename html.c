@@ -1,10 +1,23 @@
+/* $Copyright: $
+ * Copyright (c) 1996 - 2026 by Steve Baker (steve.baker.llc@gmail.com)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
 #include "tree.h"
-#include <stdio.h>
 
-
-extern bool duflag, dflag, hflag, siflag;
-extern bool metafirst, noindent, force_color, nolinks, htmloffset;
-
+extern struct Flags flag;
 extern char *version;
 extern char *host, *sp, *title, *Hintro, *Houtro;
 extern const char *charset;
@@ -47,14 +60,18 @@ void html_encode(FILE *fd, char *s)
   }
 }
 
-void url_encode(FILE *fd, char *s)
+// Returns true if the last character printed was a slash
+bool url_encode(FILE *fd, char *s)
 {
-  // Removes / from the reserved list:
-  static const char *reserved = "!#$&'()*+,:;=?@[]";
+  // Whitelisting is safer/better than blacklisting:
+  static const char *unreserved = "/-._~";
+  bool slash = false;
 
   for(;*s;s++) {
-    fprintf(fd, (isprint((u_int)*s) && (strchr(reserved, *s) == NULL))? "%c":"%%%02X", *s);
+    fprintf(fd, (isalnum(*s) || strchr(unreserved, *s))? "%c":"%%%02X", *s);
+    slash = (*s == '/');
   }
+  return slash;
 }
 
 void fcat(const char *filename)
@@ -137,14 +154,14 @@ int html_printinfo(char *dirname, struct _info *file, int level)
   char info[512];
 
   fillinfo(info,file);
-  if (metafirst) {
+  if (flag.metafirst) {
     if (info[0] == '[') {
       html_print(info);
       fprintf(outfile,"%s%s", sp, sp);
     }
-    if (!noindent) indent(level);
+    if (!flag.noindent) indent(level);
   } else {
-    if (!noindent) indent(level);
+    if (!flag.noindent) indent(level);
     if (info[0] == '[') {
       html_print(info);
       fprintf(outfile,"%s%s", sp, sp);
@@ -161,7 +178,7 @@ int html_printfile(char *dirname, char *filename, struct _info *file, int descen
   /* Switch to using 'a' elements only. Omit href attribute if not a link */
   fprintf(outfile,"<a");
   if (file) {
-    if (force_color) fprintf(outfile," class=\"%s\"", class(file));
+    if (flag.force_color) fprintf(outfile," class=\"%s\"", class(file));
     if (file->comment) {
       fprintf(outfile," title=\"");
       for(i=0; file->comment[i]; i++) {
@@ -171,12 +188,12 @@ int html_printfile(char *dirname, char *filename, struct _info *file, int descen
       fprintf(outfile, "\"");
     }
 
-    if (!nolinks) {
+    if (!flag.nolinks) {
       fprintf(outfile," href=\"%s",host);
       if (dirname != NULL) {
 	size_t len = strlen(dirname);
 	size_t off = (len >= htmldirlen? htmldirlen : 0);
-	url_encode(outfile, dirname + (htmloffset? off : 0));
+	url_encode(outfile, dirname + (flag.htmloffset? off : 0));
 	if (strcmp(dirname, filename) != 0) {
 	  if (dirname[strlen(dirname)-1] != '/') putc('/', outfile);
 	  url_encode(outfile, filename);
@@ -224,11 +241,11 @@ void html_report(struct totals tot)
 
   fprintf(outfile,"<br><br><p>\n\n");
 
-  if (duflag) {
+  if (flag.du) {
     psize(buf, tot.size);
-    fprintf(outfile,"%s%s used in ", buf, hflag || siflag? "" : " bytes");
+    fprintf(outfile,"%s%s used in ", buf, flag.h || flag.si? "" : " bytes");
   }
-  if (dflag)
+  if (flag.d)
     fprintf(outfile,"%ld director%s\n",tot.dirs,(tot.dirs==1? "y":"ies"));
   else
     fprintf(outfile,"%ld director%s, %ld file%s\n",tot.dirs,(tot.dirs==1? "y":"ies"),tot.files,(tot.files==1? "":"s"));
