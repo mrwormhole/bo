@@ -6,8 +6,15 @@ import subprocess
 import sys
 import tempfile
 
-PASS = "\033[32mPASS\033[0m"
-FAIL = "\033[31mFAIL\033[0m"
+from enum import StrEnum
+
+class Color(StrEnum):
+    RESET = "\033[0m"
+    RED   = "\033[31m"
+    GREEN = "\033[32m"
+
+PASS = f"{Color.GREEN}PASS{Color.RESET}"
+FAIL = f"{Color.RED}FAIL{Color.RESET}"
 
 
 def build_fixture(root: str) -> None:

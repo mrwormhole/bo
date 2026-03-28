@@ -25,10 +25,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "xml.c",
         "json.c",
         "html.c",
-        "util.c",
     };
 
-    var sources_buf: [11][]const u8 = undefined;
+    var sources_buf: [10][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -85,6 +84,19 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     hash_obj.linkLibC();
     exe.addObject(hash_obj);
 
+    const path_obj = b.addObject(.{
+        .name = "util",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/util.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    path_obj.linkLibC();
+    path_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(path_obj, target);
+    exe.addObject(path_obj);
+
     return exe;
 }
 
@@ -132,6 +144,8 @@ fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
         }),
     });
     tests.linkLibC();
+    tests.addIncludePath(b.path("."));
+    addPreprocessorDefines(tests, target);
 
     const test_cmd = b.addRunArtifact(tests);
 
