@@ -2,6 +2,7 @@ const std = @import("std");
 
 const man = @import("man.zig");
 const strverscmp = @import("strverscmp.zig");
+const hash = @import("hash.zig");
 
 // Import C main fn
 extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
@@ -9,6 +10,7 @@ extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
 // Include tests from imported modules
 test {
     _ = strverscmp;
+    _ = hash;
 }
 
 pub fn printStdout(content: []const u8) !void {

@@ -189,7 +189,7 @@ void push_filterstack(struct ignorefile *ig);
 struct ignorefile *pop_filterstack(void);
 struct ignorefile *flush_filterstack(void);
 
-/* hash.c */
+/* hash.zig */
 void init_hashes(void);
 char *uidtoname(uid_t uid);
 char *gidtoname(gid_t gid);
