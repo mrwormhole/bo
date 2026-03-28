@@ -38,21 +38,20 @@ fn pathnpcatSep(
 
 var path_buf: [c.PATH_MAX + 1]u8 = undefined;
 
-/// Joins a null-terminated array of path segments, deduplicating consecutive
-/// separators. Called via the pathconcat(...) macro in tree.h.
-export fn pathconcat_arr(segments: [*c][*c]const u8) [*c]u8 {
+/// Joins n path segments, deduplicating consecutive separators.
+export fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
     const limit: [*]u8 = path_buf[c.PATH_MAX..].ptr;
 
-    const first = segments[0] orelse {
+    if (n == 0) {
         path_buf[0] = 0;
         return &path_buf[0];
-    };
+    }
 
     path_buf[0] = 0;
-    var p = pathnpcatSep(&path_buf, @ptrCast(first), &path_buf, limit, sep_str);
+    var p = pathnpcatSep(&path_buf, @ptrCast(segments[0]), &path_buf, limit, sep_str);
 
     var i: usize = 1;
-    while (segments[i] != null) : (i += 1) {
+    while (i < n) : (i += 1) {
         p = pathnpcatSep(p, sep_str.ptr, &path_buf, limit, sep_str);
         p = pathnpcatSep(p, @ptrCast(segments[i]), &path_buf, limit, sep_str);
         if (@intFromPtr(p) == @intFromPtr(limit)) break;
