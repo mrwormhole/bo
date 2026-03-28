@@ -20,8 +20,6 @@ var strtable: std.StringHashMapUnmanaged([:0]const u8) = .{};
 // Process is short-lived so we intentionally leak, same as the C original.
 const allocator = std.heap.page_allocator;
 
-export fn init_hashes() void {} // NOOP
-
 export fn uidtoname(uid: Uid) [*:0]const u8 {
     if (utable.get(uid)) |name| return name.ptr;
 
@@ -71,7 +69,6 @@ export fn strhash(str: [*:0]const u8) [*:0]const u8 {
 }
 
 test "uidtoname returns same pointer on cache hit" {
-    init_hashes();
     const uid: Uid = if (builtin.os.tag != .windows) @intCast(std.os.linux.getuid()) else 0;
     const first = uidtoname(uid);
     const second = uidtoname(uid);
@@ -80,7 +77,6 @@ test "uidtoname returns same pointer on cache hit" {
 }
 
 test "uidtoname resolves current uid to a non-numeric name" {
-    init_hashes();
     if (builtin.os.tag == .windows) return;
     const uid: Uid = @intCast(std.os.linux.getuid());
     const name = std.mem.span(uidtoname(uid));
@@ -94,7 +90,6 @@ test "uidtoname resolves current uid to a non-numeric name" {
 }
 
 test "gidtoname returns same pointer on cache hit" {
-    init_hashes();
     const gid: Gid = if (builtin.os.tag != .windows) @intCast(std.os.linux.getgid()) else 0;
     const first = gidtoname(gid);
     const second = gidtoname(gid);
@@ -103,7 +98,6 @@ test "gidtoname returns same pointer on cache hit" {
 }
 
 test "gidtoname resolves current gid to a non-numeric name" {
-    init_hashes();
     if (builtin.os.tag == .windows) return;
     const gid: Gid = @intCast(std.os.linux.getgid());
     const name = std.mem.span(gidtoname(gid));
@@ -115,21 +109,18 @@ test "gidtoname resolves current gid to a non-numeric name" {
 }
 
 test "findino returns false before saveino, true after" {
-    init_hashes();
     try testing.expect(!findino(999, 1));
     saveino(999, 1);
     try testing.expect(findino(999, 1));
 }
 
 test "saveino is idempotent" {
-    init_hashes();
     saveino(42, 7);
     saveino(42, 7);
     try testing.expect(findino(42, 7));
 }
 
 test "findino distinguishes different (inode, dev) pairs" {
-    init_hashes();
     saveino(1, 1);
     try testing.expect(findino(1, 1));
     try testing.expect(!findino(1, 2));
@@ -137,47 +128,40 @@ test "findino distinguishes different (inode, dev) pairs" {
 }
 
 test "strhash returns same pointer for identical strings" {
-    init_hashes();
     const a = strhash("hello");
     const b = strhash("hello");
     try testing.expect(a == b);
 }
 
 test "strhash returns different pointers for different strings" {
-    init_hashes();
     const a = strhash("foo");
     const b = strhash("bar");
     try testing.expect(a != b);
 }
 
 test "strhash content matches input" {
-    init_hashes();
     const result = strhash("hello");
     try testing.expectEqualStrings("hello", std.mem.span(result));
 }
 
 test "uidtoname unknown uid returns numeric string" {
-    init_hashes();
     // uid 0xFFFFFF is extremely unlikely to exist on any test system
     const result = uidtoname(0xFFFFFF);
     try testing.expectEqualStrings("16777215", std.mem.span(result));
 }
 
 test "gidtoname unknown gid returns numeric string" {
-    init_hashes();
     const result = gidtoname(0xFFFFFF);
     try testing.expectEqualStrings("16777215", std.mem.span(result));
 }
 
 test "uidtoname returns different pointers for different uids" {
-    init_hashes();
     const a = uidtoname(0xFFFFFD);
     const b = uidtoname(0xFFFFFE);
     try testing.expect(a != b);
 }
 
 test "gidtoname returns different pointers for different gids" {
-    init_hashes();
     const a = gidtoname(0xFFFFFD);
     const b = gidtoname(0xFFFFFE);
     try testing.expect(a != b);
