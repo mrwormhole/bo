@@ -5,6 +5,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const sep_str = std.fs.path.sep_str;
+
 // Copies src into dst up to end, skipping a src separator character when the
 // previous character written was also a separator (deduplicates separators at
 // junctions). Returns pointer to the null terminator written.
@@ -36,10 +38,9 @@ fn pathnpcatSep(
 
 var path_buf: [c.PATH_MAX + 1]u8 = undefined;
 
-/// Joins a null-terminated array of path segments using sep, deduplicating
-/// consecutive separators. Called via the pathconcat(...) macro in tree.h.
-export fn pathconcat_arr(sep: [*:0]const u8, segments: [*c][*c]const u8) [*c]u8 {
-    const sep_slice = std.mem.span(sep);
+/// Joins a null-terminated array of path segments, deduplicating consecutive
+/// separators. Called via the pathconcat(...) macro in tree.h.
+export fn pathconcat_arr(segments: [*c][*c]const u8) [*c]u8 {
     const limit: [*]u8 = path_buf[c.PATH_MAX..].ptr;
 
     const first = segments[0] orelse {
@@ -48,12 +49,12 @@ export fn pathconcat_arr(sep: [*:0]const u8, segments: [*c][*c]const u8) [*c]u8 
     };
 
     path_buf[0] = 0;
-    var p = pathnpcatSep(&path_buf, @ptrCast(first), &path_buf, limit, sep_slice);
+    var p = pathnpcatSep(&path_buf, @ptrCast(first), &path_buf, limit, sep_str);
 
     var i: usize = 1;
     while (segments[i] != null) : (i += 1) {
-        p = pathnpcatSep(p, sep, &path_buf, limit, sep_slice);
-        p = pathnpcatSep(p, @ptrCast(segments[i]), &path_buf, limit, sep_slice);
+        p = pathnpcatSep(p, sep_str.ptr, &path_buf, limit, sep_str);
+        p = pathnpcatSep(p, @ptrCast(segments[i]), &path_buf, limit, sep_str);
         if (@intFromPtr(p) == @intFromPtr(limit)) break;
     }
 
