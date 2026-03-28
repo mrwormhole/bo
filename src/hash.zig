@@ -1,7 +1,6 @@
 //! UID/GID name caches and inode deduplication table.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const testing = std.testing;
 
 const Uid = std.c.uid_t;
@@ -20,46 +19,45 @@ var strtable: std.StringHashMapUnmanaged([:0]const u8) = .{};
 // Process is short-lived so we intentionally leak, same as the C original.
 const allocator = std.heap.page_allocator;
 
+// POSIX-only
 export fn uidtoname(uid: Uid) [*:0]const u8 {
     if (utable.get(uid)) |name| return name.ptr;
 
-    const name: [:0]const u8 = if (builtin.os.tag != .windows) blk: {
-        const pw = std.c.getpwuid(uid);
-        if (pw) |p| if (p.name) |n| {
-            break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
-        };
-        break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
-    } else "0";
+    const pw = std.c.getpwuid(uid);
+    const name: [:0]const u8 = if (pw) |p| if (p.name) |n|
+        allocator.dupeZ(u8, std.mem.span(n)) catch unreachable
+    else
+        std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable else std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
 
     utable.put(allocator, uid, name) catch unreachable;
     return name.ptr;
 }
 
+// POSIX-only
 export fn gidtoname(gid: Gid) [*:0]const u8 {
     if (gtable.get(gid)) |name| return name.ptr;
 
-    const name: [:0]const u8 = if (builtin.os.tag != .windows) blk: {
-        const gr = std.c.getgrgid(gid);
-        if (gr) |g| if (g.name) |n| {
-            break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
-        };
-        break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
-    } else "0";
+    const gr = std.c.getgrgid(gid);
+    const name: [:0]const u8 = if (gr) |g| if (g.name) |n|
+        allocator.dupeZ(u8, std.mem.span(n)) catch unreachable
+    else
+        std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable else std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
 
     gtable.put(allocator, gid, name) catch unreachable;
     return name.ptr;
 }
 
+// POSIX-only
 export fn saveino(inode: Ino, device: Dev) void {
     itable.put(allocator, .{ .inode = inode, .dev = device }, {}) catch unreachable;
 }
 
+// POSIX-only
 export fn findino(inode: Ino, device: Dev) bool {
     return itable.contains(.{ .inode = inode, .dev = device });
 }
 
-// strhash interns strings to avoid duplicate allocations. Only called from
-// tree.c on Linux (guarded by #ifdef __linux__ in tree.h).
+// Linux-only, strhash interns strings to avoid duplicate allocations (guarded by #ifdef __linux__ in tree.h).
 export fn strhash(str: [*:0]const u8) [*:0]const u8 {
     const s = std.mem.sliceTo(str, 0);
     if (strtable.get(s)) |interned| return interned.ptr;
@@ -69,7 +67,7 @@ export fn strhash(str: [*:0]const u8) [*:0]const u8 {
 }
 
 test "uidtoname returns same pointer on cache hit" {
-    const uid: Uid = if (builtin.os.tag != .windows) @intCast(std.os.linux.getuid()) else 0;
+    const uid: Uid = @intCast(std.os.linux.getuid());
     const first = uidtoname(uid);
     const second = uidtoname(uid);
     try testing.expect(first == second);
@@ -77,7 +75,6 @@ test "uidtoname returns same pointer on cache hit" {
 }
 
 test "uidtoname resolves current uid to a non-numeric name" {
-    if (builtin.os.tag == .windows) return;
     const uid: Uid = @intCast(std.os.linux.getuid());
     const name = std.mem.span(uidtoname(uid));
     // A real passwd entry exists for the current user; the result must not be
@@ -90,7 +87,7 @@ test "uidtoname resolves current uid to a non-numeric name" {
 }
 
 test "gidtoname returns same pointer on cache hit" {
-    const gid: Gid = if (builtin.os.tag != .windows) @intCast(std.os.linux.getgid()) else 0;
+    const gid: Gid = @intCast(std.os.linux.getgid());
     const first = gidtoname(gid);
     const second = gidtoname(gid);
     try testing.expect(first == second);
@@ -98,7 +95,6 @@ test "gidtoname returns same pointer on cache hit" {
 }
 
 test "gidtoname resolves current gid to a non-numeric name" {
-    if (builtin.os.tag == .windows) return;
     const gid: Gid = @intCast(std.os.linux.getgid());
     const name = std.mem.span(gidtoname(gid));
     for (name) |c| {
