@@ -1,4 +1,6 @@
-//! UID/GID name caches and inode deduplication table.
+//! UID/GID name caches which help with less syscalls
+//! and inode deduplication table which avoids symlink cycles,
+//! and string interning which saves memory.
 
 const std = @import("std");
 const testing = std.testing;
@@ -7,7 +9,6 @@ const Uid = std.c.uid_t;
 const Gid = std.c.gid_t;
 const Ino = std.posix.ino_t;
 const Dev = std.posix.dev_t;
-
 const InodeKey = struct { inode: Ino, dev: Dev };
 
 var utable: std.AutoHashMapUnmanaged(Uid, [:0]const u8) = .{};
@@ -24,10 +25,10 @@ export fn uidtoname(uid: Uid) [*:0]const u8 {
     if (utable.get(uid)) |name| return name.ptr;
 
     const pw = std.c.getpwuid(uid);
-    const name: [:0]const u8 = if (pw) |p| if (p.name) |n|
-        allocator.dupeZ(u8, std.mem.span(n)) catch unreachable
-    else
-        std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable else std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
+    const name: [:0]const u8 = blk: {
+        if (pw) |p| if (p.name) |n| break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+        break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
+    };
 
     utable.put(allocator, uid, name) catch unreachable;
     return name.ptr;
@@ -38,10 +39,10 @@ export fn gidtoname(gid: Gid) [*:0]const u8 {
     if (gtable.get(gid)) |name| return name.ptr;
 
     const gr = std.c.getgrgid(gid);
-    const name: [:0]const u8 = if (gr) |g| if (g.name) |n|
-        allocator.dupeZ(u8, std.mem.span(n)) catch unreachable
-    else
-        std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable else std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
+    const name: [:0]const u8 = blk: {
+        if (gr) |g| if (g.name) |n| break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+        break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
+    };
 
     gtable.put(allocator, gid, name) catch unreachable;
     return name.ptr;
