@@ -26,7 +26,11 @@ export fn uidtoname(uid: Uid) [*:0]const u8 {
 
     const pw = std.c.getpwuid(uid);
     const name: [:0]const u8 = blk: {
-        if (pw) |p| if (p.name) |n| break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+        if (pw) |p| {
+            if (p.name) |n| {
+                break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+            }
+        }
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
     };
 
@@ -40,7 +44,11 @@ export fn gidtoname(gid: Gid) [*:0]const u8 {
 
     const gr = std.c.getgrgid(gid);
     const name: [:0]const u8 = blk: {
-        if (gr) |g| if (g.name) |n| break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+        if (gr) |g| {
+            if (g.name) |n| {
+                break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+            }
+        }
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
     };
 
