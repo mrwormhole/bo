@@ -18,7 +18,6 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const common_sources = [_][]const u8{
         "tree.c",
         "list.c",
-        "hash.c",
         "color.c",
         "file.c",
         "filter.c",
@@ -30,7 +29,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "util.c",
     };
 
-    var sources_buf: [12][]const u8 = undefined;
+    var sources_buf: [11][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -75,6 +74,17 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
     exe.addObject(strverscmp_obj);
+
+    const hash_obj = b.addObject(.{
+        .name = "hash",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/hash.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    hash_obj.linkLibC();
+    exe.addObject(hash_obj);
 
     return exe;
 }
@@ -122,6 +132,7 @@ fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
             .optimize = optimize,
         }),
     });
+    tests.linkLibC();
 
     const test_cmd = b.addRunArtifact(tests);
 

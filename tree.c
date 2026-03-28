@@ -161,8 +161,6 @@ int tree_main(int argc, char **argv)
     }
   }
 #endif
-  init_hashes();
-
   for(n=i=1;i<(size_t)argc;i=n) {
     n++;
     if (optf && argv[i][0] == '-' && argv[i][1]) {

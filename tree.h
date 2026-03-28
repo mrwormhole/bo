@@ -189,8 +189,7 @@ void push_filterstack(struct ignorefile *ig);
 struct ignorefile *pop_filterstack(void);
 struct ignorefile *flush_filterstack(void);
 
-/* hash.c */
-void init_hashes(void);
+/* hash.zig */
 char *uidtoname(uid_t uid);
 char *gidtoname(gid_t gid);
 bool findino(ino_t, dev_t);
