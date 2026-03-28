@@ -11,28 +11,16 @@ const Dev = std.posix.dev_t;
 
 const InodeKey = struct { inode: Ino, dev: Dev };
 
-// Mirrors the C code's intentional leak: the process is short-lived so we
-// never free. An arena keeps all allocations contiguous.
-var arena_state: std.heap.ArenaAllocator = undefined;
-var allocator: std.mem.Allocator = undefined;
+var utable: std.AutoHashMapUnmanaged(Uid, [:0]const u8) = .{};
+var gtable: std.AutoHashMapUnmanaged(Gid, [:0]const u8) = .{};
+var itable: std.AutoHashMapUnmanaged(InodeKey, void) = .{};
+// strhash is Linux-only (#ifdef __linux__ in tree.h)
+var strtable: std.StringHashMapUnmanaged([:0]const u8) = .{};
 
-var utable: std.AutoHashMap(Uid, [:0]const u8) = undefined;
-var gtable: std.AutoHashMap(Gid, [:0]const u8) = undefined;
-var itable: std.AutoHashMap(InodeKey, void) = undefined;
+// Process is short-lived so we intentionally leak, same as the C original.
+const allocator = std.heap.page_allocator;
 
-// strhash is Linux-only on the C side (#ifdef __linux__ in tree.h), but we
-// always allocate the table so init_hashes() is unconditional.
-var strtable: std.StringHashMap([:0]const u8) = undefined;
-
-export fn init_hashes() void {
-    arena_state = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    allocator = arena_state.allocator();
-
-    utable = std.AutoHashMap(Uid, [:0]const u8).init(allocator);
-    gtable = std.AutoHashMap(Gid, [:0]const u8).init(allocator);
-    itable = std.AutoHashMap(InodeKey, void).init(allocator);
-    strtable = std.StringHashMap([:0]const u8).init(allocator);
-}
+export fn init_hashes() void {} // NOOP
 
 export fn uidtoname(uid: Uid) [*:0]const u8 {
     if (utable.get(uid)) |name| return name.ptr;
@@ -45,7 +33,7 @@ export fn uidtoname(uid: Uid) [*:0]const u8 {
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
     } else "0";
 
-    utable.put(uid, name) catch unreachable;
+    utable.put(allocator, uid, name) catch unreachable;
     return name.ptr;
 }
 
@@ -60,12 +48,12 @@ export fn gidtoname(gid: Gid) [*:0]const u8 {
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
     } else "0";
 
-    gtable.put(gid, name) catch unreachable;
+    gtable.put(allocator, gid, name) catch unreachable;
     return name.ptr;
 }
 
 export fn saveino(inode: Ino, device: Dev) void {
-    itable.put(.{ .inode = inode, .dev = device }, {}) catch unreachable;
+    itable.put(allocator, .{ .inode = inode, .dev = device }, {}) catch unreachable;
 }
 
 export fn findino(inode: Ino, device: Dev) bool {
@@ -78,7 +66,7 @@ export fn strhash(str: [*:0]const u8) [*:0]const u8 {
     const s = std.mem.sliceTo(str, 0);
     if (strtable.get(s)) |interned| return interned.ptr;
     const copy = allocator.dupeZ(u8, s) catch unreachable;
-    strtable.put(copy, copy) catch unreachable;
+    strtable.put(allocator, copy, copy) catch unreachable;
     return copy.ptr;
 }
 
