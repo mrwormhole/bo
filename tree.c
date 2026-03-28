@@ -992,7 +992,8 @@ void push_files(const char *dir, struct ignorefile **ig, struct infofile **inf, 
     struct ignorefile *tig = NULL;
     /* Not going to implement git configs so no core.excludesFile support. */
     if (top && (stmp = getenv("GIT_DIR"))) {
-      push_filterstack(tig = new_ignorefile(stmp, pathconcat(path, stmp, "info/exclude", NULL), false));
+      char *segs[] = {path, stmp, "info/exclude"};
+      push_filterstack(tig = new_ignorefile(stmp, pathconcat(segs, 3), false));
     }
     if (top) *ig = gitignore_search(dir, 0);
     else push_filterstack(*ig = new_ignorefile(dir, dir, top));
@@ -1092,7 +1093,8 @@ struct _info **unix_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, cha
         if (flag.condense_singletons) {
           while (is_singleton(*dir)) {
             struct _info **child = (*dir)->child;
-            char *name = pathconcat((*dir)->name, child[0]->name, NULL);
+            char *segs[] = {(*dir)->name, child[0]->name};
+            char *name = pathconcat(segs, 2);
             free((*dir)->name);
             (*dir)->name = scopy(name);
             (*dir)->child = child[0]->child;

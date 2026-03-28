@@ -275,8 +275,8 @@ int unix_error(char *error);
 void unix_newline(struct _info *file, int level, int postdir, int needcomma);
 void unix_report(struct totals tot);
 
-/* util.c */
-char *pathconcat(char *str, ...);
+/* util.zig */
+char *pathconcat(char **segments, size_t n);
 bool is_singleton(struct _info *dir);
 void *xmalloc(size_t);
 void *xrealloc(void *, size_t);
