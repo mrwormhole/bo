@@ -1,7 +1,6 @@
 const std = @import("std");
 
 // Note: Windows native is not supported (tree.c requires POSIX).
-// Use Cygwin for Windows builds.
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});

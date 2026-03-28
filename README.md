@@ -6,7 +6,7 @@
 
 This is a UNIX utility to display a tree view of directories. The original tree (written in C) can be found [here](http://oldmanprogrammer.net/source.php?dir=projects/tree)
 
-bo (The Bodhi Tree) is Zig version of this UNIX utility where C implementation is moved to Zig implementation gradually to make cross-platform dead easy and improve the safety without performance loss. It is also an educational project to test drive Zig. Everyone is welcome here via PRs
+bo (The Bodhi Tree) is Zig (v0.15.2) version of this UNIX utility where C implementation is moved to Zig implementation gradually to make cross-platform dead easy and improve the safety without performance loss. It is also an educational project to test drive Zig. Everyone is welcome here via PRs
 
 You can grab the binary from [the releases here](https://github.com/mrwormhole/bo/releases)
 
@@ -16,11 +16,9 @@ You can grab the binary from [the releases here](https://github.com/mrwormhole/b
 
 - Linux (x86_64, ARM64), macOS (x86_64, Apple Silicon), FreeBSD (x86_64, ARM64), Android (via NDK)
 
-**Requires POSIX Environment:**
+**Not Supported :**
 
-- Windows (requires Cygwin, not native Windows, working on it to make non-POSIX dependent with full Zig re-write)
-
-Requirement is to have Zig v0.15.2
+- Windows (requires full Zig re-write)
 
 ```bash
 zig build # Debug build (default)
@@ -32,11 +30,10 @@ zig build -Doptimize=ReleaseFast
 The compiled binary will be located at `zig-out/bin/`. It is super easy to build for any platform from any platform:
 
 ```bash
-zig build -Dtarget=x86_64-windows   # Build Windows binary (requires Cygwin)
-zig build -Dtarget=aarch64-linux    # Build ARM64 Linux binary
-zig build -Dtarget=x86_64-macos     # Build macOS binary
-zig build -Dtarget=aarch64-macos    # Build Apple Silicon binary
-zig build -Dtarget=x86_64-freebsd   # Build FreeBSD binary
+zig build -Dtarget=aarch64-linux    
+zig build -Dtarget=x86_64-macos    
+zig build -Dtarget=aarch64-macos   
+zig build -Dtarget=x86_64-freebsd
 ```
 
 ## Run Without Installing
