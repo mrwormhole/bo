@@ -90,7 +90,7 @@ export fn xml_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) c
 
     if (!flag.noindent) xml_indent(level);
 
-    const mt: c.mode_t = if (file) |f| f.mode & c.S_IFMT else 0;
+    const mt: c.mode_t = if (file) |f| @intCast(f.mode & c.S_IFMT) else 0;
 
     var t: usize = 0;
     while (ifmt[t] != 0) : (t += 1) {
