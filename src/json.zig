@@ -1,5 +1,19 @@
 //! JSON renderer ported from json.c.
 
+// [
+//   {"type": "directory", "name": "name", "mode": "0777", "user": "user", "group": "group", "inode": ###, "dev": ####, "time": "00:00 00-00-0000", "info": "<file comment>", "contents": [
+//     {"type": "link", "name": "name", "target": "name", "info": "...", "contents": [... if link is followed, otherwise this is empty.]}
+//     {"type": "file", "name": "name", "mode": "0777", "size": ###, "group": "group", "inode": ###, "dev": ###, "time": "00:00 00-00-0000", "info": "..."}
+//     {"type": "socket", "name": "", "info": "...", "error": "some error" ...}
+//     {"type": "block", "name": "" ...},
+//     {"type": "char", "name": "" ...},
+//     {"type": "fifo", "name": "" ...},
+//     {"type": "door", "name": "" ...},
+//     {"type": "port", "name": "" ...}
+//   ]},
+//   {"type": "report", "size": ###, "files": ###, "directories": ###}
+// ]
+
 const c = @cImport({
     @cInclude("tree.h");
 });
@@ -23,7 +37,7 @@ extern fn do_date(t: c.time_t) [*c]u8;
 // RFC 8259 escape map: index 0..31 → '-' means \uXXXX, otherwise the letter after '\'.
 const ctrl_map: *const [32]u8 = "0-------btn-fr------------------";
 
-fn jsonEncode(fd: *c.FILE, s_in: [*c]const u8) void {
+fn jsonEncode(fd: *c.FILE, s_in: [*c]const u8) void { // FIXME: Still not UTF-8
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         const ch: u8 = s[0];
