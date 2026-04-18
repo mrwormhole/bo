@@ -22,10 +22,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "filter.c",
         "info.c",
         "unix.c",
-        "html.c",
     };
 
-    var sources_buf: [8][]const u8 = undefined;
+    var sources_buf: [7][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -120,6 +119,19 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     xml_obj.addIncludePath(b.path("."));
     addPreprocessorDefines(xml_obj, target);
     exe.addObject(xml_obj);
+
+    const html_obj = b.addObject(.{
+        .name = "html",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/html.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    html_obj.linkLibC();
+    html_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(html_obj, target);
+    exe.addObject(html_obj);
 
     return exe;
 }
