@@ -74,6 +74,12 @@ CASES = [
     ("JSON reverse (-Jr)",       ["-J", "-r"], True),
     ("JSON dirsfirst",           ["-J", "--dirsfirst"], True),
     ("XML output (-X)",          ["-X"],      True),
+    ("XML dirs only (-Xd)",      ["-X", "-d"], True),
+    ("XML no indent (-Xi)",      ["-X", "-i"], True),
+    ("XML all files (-Xa)",      ["-X", "-a"], True),
+    ("XML depth limit (-XL 1)",  ["-X", "-L", "1"], True),
+    ("XML reverse (-Xr)",        ["-X", "-r"], True),
+    ("XML dirsfirst",            ["-X", "--dirsfirst"], True),
     ("sort reverse (-r)",        ["-r"],      False),
     ("dirs first (--dirsfirst)", ["--dirsfirst"], False),
 ]
