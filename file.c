@@ -159,7 +159,8 @@ struct _info **fprune(struct _info *head, const char *path, bool matched, bool r
     if (flag.condense_singletons) {
       while (is_singleton(ent)) {
         struct _info **child = ent->child;
-        char *name = pathconcat(ent->name, child[0]->name, NULL);
+        char *segs[] = {ent->name, child[0]->name};
+        char *name = pathconcat(segs, 2);
         free(ent->name);
         ent->name = scopy(name);
         ent->child = child[0]->child;
