@@ -30,7 +30,15 @@ jobs:
         run: zig build
 
       - name: Install tree
-        run: sudo apt-get install -y tree
+        env:
+          TREE_VERSION: 2.3.2
+        run: |
+          set -eux
+          curl -sSL "https://github.com/Old-Man-Programmer/tree/archive/refs/tags/${TREE_VERSION}.tar.gz" -o tree.tgz
+          tar xzf tree.tgz
+          make -C "tree-${TREE_VERSION}"
+          sudo install -m 0755 "tree-${TREE_VERSION}/tree" /usr/local/bin/tree
+          tree --version
 
       - name: Interop test
         run: ./scripts/interop.py tree ./zig-out/bin/bo
