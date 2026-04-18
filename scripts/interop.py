@@ -34,6 +34,11 @@ def build_fixture(root: str) -> None:
         "a/b/c/c1.txt",
         "a/b/c/c2.txt",
         ".hidden_file",
+        # Force json_encode escape branches: quote → \", backslash → \\,
+        # tab → \t, DEL (0x7f stays literal but bytes < 32 hit the ctrl map).
+        'a/quote"file.txt',
+        'a/back\\slash.txt',
+        'a/tab\tfile.txt',
     ]
     for d in dirs:
         os.makedirs(os.path.join(root, d), exist_ok=True)
@@ -62,6 +67,12 @@ CASES = [
     ("full path (-f)",           ["-f"],      False),
     ("no indentation (-i)",      ["-i"],      False),
     ("JSON output (-J)",         ["-J"],      True),
+    ("JSON dirs only (-Jd)",     ["-J", "-d"], True),
+    ("JSON no indent (-Ji)",     ["-J", "-i"], True),
+    ("JSON all files (-Ja)",     ["-J", "-a"], True),
+    ("JSON depth limit (-JL 1)", ["-J", "-L", "1"], True),
+    ("JSON reverse (-Jr)",       ["-J", "-r"], True),
+    ("JSON dirsfirst",           ["-J", "--dirsfirst"], True),
     ("XML output (-X)",          ["-X"],      True),
     ("sort reverse (-r)",        ["-r"],      False),
     ("dirs first (--dirsfirst)", ["--dirsfirst"], False),

@@ -23,11 +23,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "info.c",
         "unix.c",
         "xml.c",
-        "json.c",
         "html.c",
     };
 
-    var sources_buf: [10][]const u8 = undefined;
+    var sources_buf: [9][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -96,6 +95,19 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     path_obj.addIncludePath(b.path("."));
     addPreprocessorDefines(path_obj, target);
     exe.addObject(path_obj);
+
+    const json_obj = b.addObject(.{
+        .name = "json",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/json.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    json_obj.linkLibC();
+    json_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(json_obj, target);
+    exe.addObject(json_obj);
 
     return exe;
 }

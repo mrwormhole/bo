@@ -8,7 +8,10 @@ const util = @import("util.zig");
 // Import C main fn
 extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
 
-// Include tests from imported modules
+// Include tests from imported modules. Note: json.zig is intentionally
+// excluded — its exports bind to tree.c/file.c globals (flag, outfile,
+// ifmt, ftype, prot, psize, do_date), which the standalone test binary
+// does not link. Behavioral coverage lives in scripts/interop.py.
 test {
     _ = strverscmp;
     _ = hash;
