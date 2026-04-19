@@ -98,6 +98,12 @@ export fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque {
     };
 }
 
+export fn scopy(s: [*c]const u8) [*c]u8 {
+    const len = c.strlen(s);
+    const dst: [*c]u8 = @ptrCast(xmalloc(len + 1));
+    return c.strcpy(dst, s);
+}
+
 test "pathnpcatSep basic copy" {
     var buf: [64]u8 = undefined;
     const limit: [*]u8 = buf[63..].ptr;
@@ -178,4 +184,18 @@ test "pathconcat dedups separator at segment junction" {
     var segs = [_][*c]const u8{ "foo" ++ sep_str, sep_str ++ "bar" };
     const result = pathconcat(&segs, 2);
     try std.testing.expectEqualStrings("foo" ++ sep_str ++ "bar", std.mem.sliceTo(result, 0));
+}
+
+test "scopy duplicates a null-terminated string" {
+    const src: [*c]const u8 = "hello";
+    const dst = scopy(src);
+    defer std.c.free(dst);
+    try std.testing.expectEqualStrings("hello", std.mem.sliceTo(dst, 0));
+    try std.testing.expect(@intFromPtr(dst) != @intFromPtr(src));
+}
+
+test "scopy handles empty string" {
+    const dst = scopy("");
+    defer std.c.free(dst);
+    try std.testing.expectEqualStrings("", std.mem.sliceTo(dst, 0));
 }

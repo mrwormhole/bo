@@ -10,12 +10,6 @@ extern var xpattern: [c.PATH_MAX]u8;
 
 var filterstack: ?*c.struct_ignorefile = null;
 
-fn scopy(s: [*c]const u8) [*c]u8 {
-    const len = c.strlen(s);
-    const dst: [*c]u8 = @ptrCast(c.xmalloc(len + 1));
-    return c.strcpy(dst, s);
-}
-
 fn is_file(path: [*c]const u8) bool {
     var st: c.struct_stat = undefined;
     if (c.stat(path, &st) < 0) return false;
@@ -54,7 +48,7 @@ export fn gittrim(s: [*c]u8) void {
 export fn new_pattern(pattern: [*c]u8) *c.struct_pattern {
     const p: *c.struct_pattern = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_pattern))));
     const offset: usize = if (pattern[0] == '/') 1 else 0;
-    p.pattern = scopy(pattern + offset);
+    p.pattern = c.scopy(pattern + offset);
     const sl = c.strchr(pattern, '/');
     p.relative = @intFromBool(sl == null or sl[1] == 0);
     p.next = null;
@@ -155,7 +149,7 @@ export fn new_ignorefile(basepath: [*c]const u8, path: [*c]const u8, checkparent
     const ig: *c.struct_ignorefile = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_ignorefile))));
     ig.remove = remove_head;
     ig.reverse = reverse_head;
-    ig.path = scopy(basepath);
+    ig.path = c.scopy(basepath);
     ig.next = null;
 
     return ig;

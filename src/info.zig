@@ -20,12 +20,6 @@ extern var xpattern: [c.PATH_MAX]u8;
 
 var infostack: ?*c.struct_infofile = null;
 
-fn scopy(s: [*c]const u8) [*c]u8 {
-    const len = c.strlen(s);
-    const dst: [*c]u8 = @ptrCast(c.xmalloc(len + 1));
-    return c.strcpy(dst, s);
-}
-
 fn new_comment(phead: ?*c.struct_pattern, line: [*c][*c]u8, lines: c_int) *c.struct_comment {
     const com: *c.struct_comment = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_comment))));
     com.pattern = phead;
@@ -76,7 +70,7 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
         if (c.strlen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
-            line[@intCast(lines)] = scopy(&buf[1]);
+            line[@intCast(lines)] = c.scopy(&buf[1]);
             lines += 1;
         } else {
             if (lines != 0) {
@@ -126,7 +120,7 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
 
     const inf: *c.struct_infofile = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_infofile))));
     inf.comments = chead;
-    inf.path = scopy(path);
+    inf.path = c.scopy(path);
     inf.next = null;
 
     return inf;

@@ -62,8 +62,6 @@
 # endif
 #endif
 
-/* Should probably use strdup(), but we like our xmalloc() */
-#define scopy(x)	strcpy(xmalloc(strlen(x)+1),(x))
 #define MINIT		30	/* number of dir entries to initially allocate */
 #define MINC		20	/* allocation increment */
 
@@ -286,6 +284,7 @@ char *pathconcat(char **segments, size_t n);
 bool is_singleton(struct _info *dir);
 void *xmalloc(size_t);
 void *xrealloc(void *, size_t);
+char *scopy(const char *s);
 
 /* xml.c */
 void xml_intro(void);
