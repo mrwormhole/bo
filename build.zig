@@ -16,15 +16,11 @@ pub fn build(b: *std.Build) void {
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
     const common_sources = [_][]const u8{
         "tree.c",
-        "list.c",
         "color.c",
         "file.c",
-        "filter.c",
-        "info.c",
-        "unix.c",
     };
 
-    var sources_buf: [7][]const u8 = undefined;
+    var sources_buf: [3][]const u8 = undefined;
     var num_sources: usize = 0;
 
     for (common_sources) |src| {
@@ -132,6 +128,58 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     html_obj.addIncludePath(b.path("."));
     addPreprocessorDefines(html_obj, target);
     exe.addObject(html_obj);
+
+    const list_obj = b.addObject(.{
+        .name = "list",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/list.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    list_obj.linkLibC();
+    list_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(list_obj, target);
+    exe.addObject(list_obj);
+
+    const unix_obj = b.addObject(.{
+        .name = "unix",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/unix.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    unix_obj.linkLibC();
+    unix_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(unix_obj, target);
+    exe.addObject(unix_obj);
+
+    const info_obj = b.addObject(.{
+        .name = "info",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/info.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    info_obj.linkLibC();
+    info_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(info_obj, target);
+    exe.addObject(info_obj);
+
+    const filter_obj = b.addObject(.{
+        .name = "filter",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/filter.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    filter_obj.linkLibC();
+    filter_obj.addIncludePath(b.path("."));
+    addPreprocessorDefines(filter_obj, target);
+    exe.addObject(filter_obj);
 
     return exe;
 }
