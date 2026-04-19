@@ -14,23 +14,11 @@ pub fn build(b: *std.Build) void {
 }
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-    const common_sources = [_][]const u8{
+    const sources = [_][]const u8{
         "tree.c",
-        "list.c",
         "color.c",
         "file.c",
-        "filter.c",
-        "info.c",
-        "unix.c",
     };
-
-    var sources_buf: [7][]const u8 = undefined;
-    var num_sources: usize = 0;
-
-    for (common_sources) |src| {
-        sources_buf[num_sources] = src;
-        num_sources += 1;
-    }
 
     const exe = b.addExecutable(.{
         .name = "bo",
@@ -41,7 +29,6 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
-    const sources = sources_buf[0..num_sources];
     const cflags = &[_][]const u8{
         "-std=c11",
         "-Wpedantic",
@@ -52,88 +39,54 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         "-Wconversion",
     };
     exe.addCSourceFiles(.{
-        .files = sources,
+        .files = &sources,
         .flags = cflags,
     });
     addPreprocessorDefines(exe, target);
     exe.linkLibC();
 
-    // Compile our strverscmp implementation as a separate object so the
-    // symbol is always available to the C code, on every platform.
-    const strverscmp_obj = b.addObject(.{
-        .name = "strverscmp",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/strverscmp.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    exe.addObject(strverscmp_obj);
-
-    const hash_obj = b.addObject(.{
-        .name = "hash",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/hash.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    hash_obj.linkLibC();
-    exe.addObject(hash_obj);
-
-    const path_obj = b.addObject(.{
-        .name = "util",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/util.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    path_obj.linkLibC();
-    path_obj.addIncludePath(b.path("."));
-    addPreprocessorDefines(path_obj, target);
-    exe.addObject(path_obj);
-
-    const json_obj = b.addObject(.{
-        .name = "json",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/json.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    json_obj.linkLibC();
-    json_obj.addIncludePath(b.path("."));
-    addPreprocessorDefines(json_obj, target);
-    exe.addObject(json_obj);
-
-    const xml_obj = b.addObject(.{
-        .name = "xml",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/xml.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    xml_obj.linkLibC();
-    xml_obj.addIncludePath(b.path("."));
-    addPreprocessorDefines(xml_obj, target);
-    exe.addObject(xml_obj);
-
-    const html_obj = b.addObject(.{
-        .name = "html",
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/html.zig"),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    html_obj.linkLibC();
-    html_obj.addIncludePath(b.path("."));
-    addPreprocessorDefines(html_obj, target);
-    exe.addObject(html_obj);
+    // strverscmp is linked as a separate object so the symbol is always
+    // available to the C code, on every platform.
+    addZigObject(b, exe, target, optimize, "strverscmp", .{ .link_libc = false, .include_root = false, .defines = false });
+    addZigObject(b, exe, target, optimize, "hash", .{ .include_root = false, .defines = false });
+    addZigObject(b, exe, target, optimize, "util", .{});
+    addZigObject(b, exe, target, optimize, "json", .{});
+    addZigObject(b, exe, target, optimize, "xml", .{});
+    addZigObject(b, exe, target, optimize, "html", .{});
+    addZigObject(b, exe, target, optimize, "list", .{});
+    addZigObject(b, exe, target, optimize, "unix", .{});
+    addZigObject(b, exe, target, optimize, "info", .{});
+    addZigObject(b, exe, target, optimize, "filter", .{});
 
     return exe;
+}
+
+const ZigObjectOpts = struct {
+    link_libc: bool = true,
+    include_root: bool = true,
+    defines: bool = true,
+};
+
+fn addZigObject(
+    b: *std.Build,
+    exe: *std.Build.Step.Compile,
+    target: std.Build.ResolvedTarget,
+    optimize: std.builtin.OptimizeMode,
+    name: []const u8,
+    opts: ZigObjectOpts,
+) void {
+    const obj = b.addObject(.{
+        .name = name,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path(b.fmt("src/{s}.zig", .{name})),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    if (opts.link_libc) obj.linkLibC();
+    if (opts.include_root) obj.addIncludePath(b.path("."));
+    if (opts.defines) addPreprocessorDefines(obj, target);
+    exe.addObject(obj);
 }
 
 fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {

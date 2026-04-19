@@ -62,8 +62,6 @@
 # endif
 #endif
 
-/* Should probably use strdup(), but we like our xmalloc() */
-#define scopy(x)	strcpy(xmalloc(strlen(x)+1),(x))
 #define MINIT		30	/* number of dir entries to initially allocate */
 #define MINC		20	/* allocation increment */
 
@@ -234,6 +232,12 @@ void null_intro(void);
 void null_outtro(void);
 void null_close(struct _info *file, int level, int needcomma);
 void emit_tree(char **dirname, bool needfulltree);
+/* Writes the URL-encoded base + dirname segment of a hyperlink, using the
+ * realbasepath/dirpathoffset state set during emit_tree. Handles hanging
+ * slashes between the base path and the dirname.
+ * NOTE: deviation from the upstream fork — extracted so the base-path state
+ * can stay file-local to list.zig instead of being exposed as globals. */
+void emit_hyperlink_path(FILE *out, char *dirname);
 struct totals listdir(char *dirname, struct _info **dir, int lev, dev_t dev, bool hasfulltree);
 
 /* tree.c */
@@ -280,6 +284,7 @@ char *pathconcat(char **segments, size_t n);
 bool is_singleton(struct _info *dir);
 void *xmalloc(size_t);
 void *xrealloc(void *, size_t);
+char *scopy(const char *s);
 
 /* xml.c */
 void xml_intro(void);

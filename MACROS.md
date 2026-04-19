@@ -29,7 +29,6 @@
 |-------|------------|---------|
 | `MAXPATH` | `64*1024` | Custom max path (64KB) |
 | `SIXMONTHS` | `(6*31*24*60*60)` | Time constant (6 months) |
-| `scopy(x)` | `strcpy(xmalloc(strlen(x)+1),(x))` | String copy helper |
 | `MINIT` | `30` | Initial dir entry allocation |
 | `MINC` | `20` | Allocation increment |
 | `UNUSED(x)` | `((void)x)` | Suppress unused variable warnings |

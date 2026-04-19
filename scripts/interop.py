@@ -46,6 +46,41 @@ def build_fixture(root: str) -> None:
         path = os.path.join(root, f)
         with open(path, "w") as fh:
             fh.write(f)
+    # Symlinks exercise list.zig's lnk branches: dir-link descend (-l),
+    # file-link rendering, and the "recursive, not followed" path when -l
+    # follows a self-loop and findino() reports the inode as already seen.
+    os.symlink("a",        os.path.join(root, "link_to_dir"))
+    os.symlink("a/a1.txt", os.path.join(root, "link_to_file"))
+    os.symlink(".",        os.path.join(root, "link_loop"))
+    # .info file exercises info.zig: # comments, pattern-then-tab-message
+    # parsing, multi-line messages, multiple patterns sharing one message,
+    # and orphan/empty-line handling.
+    info_body = (
+        "# this is a comment line and should be skipped\n"
+        "\n"
+        "root.txt\n"
+        "\tannotation for root.txt\n"
+        "\n"
+        "a1.txt\n"
+        "a2.txt\n"
+        "\tshared annotation across two patterns\n"
+        "\tsecond line of annotation\n"
+    )
+    with open(os.path.join(root, ".info"), "w") as fh:
+        fh.write(info_body)
+    # .gitignore exercises filter.zig: # comments, blank lines, plain patterns
+    # (relative + absolute), trailing-space trimming, and ! negation rescue.
+    # Files referenced here are created by the loop above (a1.txt, a2.txt,
+    # b1.txt, c1.txt, c2.txt under a/...).
+    gitignore_body = (
+        "# ignore all .txt files\n"
+        "\n"
+        "*.txt\n"
+        "!a1.txt\n"
+        ".hidden_dir/\n"
+    )
+    with open(os.path.join(root, ".gitignore"), "w") as fh:
+        fh.write(gitignore_body)
 
 
 def run(cmd: list[str]) -> str:
@@ -82,11 +117,62 @@ CASES = [
     ("XML dirsfirst",            ["-X", "--dirsfirst"], True),
     ("sort reverse (-r)",        ["-r"],      False),
     ("dirs first (--dirsfirst)", ["--dirsfirst"], False),
+    ("follow links (-l)",        ["-l"],      False),
+    ("follow links + depth (-lL 2)", ["-l", "-L", "2"], False),
+    ("JSON follow links (-Jl)",  ["-J", "-l"], True),
+    ("file-type suffix (-F)",    ["-F"],      False),
+    ("file-type suffix follow links (-Fl)", ["-F", "-l"], False),
+    ("hyperlinks (--hyperlink)", ["--hyperlink"], False),
+    ("hyperlinks + suffix",      ["--hyperlink", "-F"], False),
+    ("info annotations (--info)", ["--info"], False),
+    ("info + metafirst",          ["--info", "--metafirst"], False),
+    ("JSON info (--info -J)",     ["--info", "-J"], True),
+    ("gitignore (--gitignore)",   ["--gitignore"], False),
+    ("gitignore + all (-a)",      ["--gitignore", "-a"], False),
+    ("JSON gitignore",            ["--gitignore", "-J"], True),
+]
+
+
+# Cases that need full control over the argv (custom paths, no --noreport,
+# multiple roots, etc.). args_factory builds the full argv after the binary;
+# unlike CASES, the runner does not inject --noreport here.
+EDGE_CASES = [
+    ("with report",          lambda t: [t],                                       False),
+    ("trailing slash root",  lambda t: ["--noreport", t + "/"],                   False),
+    ("multiple roots",       lambda t: ["--noreport", t, t],                      False),
+    ("filelimit triggers",   lambda t: ["--noreport", "--filelimit", "2", t],     False),
+    ("nonexistent path",     lambda t: ["--noreport", "/__bo_no_such_dir__"],     False),
+    ("JSON nonexistent",     lambda t: ["--noreport", "-J", "/__bo_no_such_dir__"], True),
 ]
 
 
 def strip_indent(output: str) -> str:
     return "\n".join(line.lstrip() for line in output.splitlines())
+
+
+def compare(desc: str, tree_args: list[str], bo_args: list[str], tmp: str,
+            indent_insensitive: bool, tree_bin: str, bo_bin: str) -> bool:
+    tree_out = run([tree_bin, *tree_args]).replace(tmp, "<ROOT>")
+    bo_out   = run([bo_bin,   *bo_args]  ).replace(tmp, "<ROOT>")
+
+    if indent_insensitive:
+        tree_out = strip_indent(tree_out)
+        bo_out   = strip_indent(bo_out)
+
+    if tree_out == bo_out:
+        print(f"  {PASS}  {desc}")
+        return True
+
+    print(f"  {FAIL}  {desc}")
+    tree_lines = tree_out.splitlines()
+    bo_lines   = bo_out.splitlines()
+    for i in range(max(len(tree_lines), len(bo_lines))):
+        tl = tree_lines[i] if i < len(tree_lines) else "<missing>"
+        bl = bo_lines[i]   if i < len(bo_lines)   else "<missing>"
+        marker = "  " if tl == bl else "!!"
+        print(f"    {marker} tree: {repr(tl)}")
+        print(f"    {marker}   bo: {repr(bl)}")
+    return False
 
 
 def main() -> int:
@@ -102,34 +188,17 @@ def main() -> int:
         build_fixture(tmp)
 
         for desc, flags, indent_insensitive in CASES:
-            tree_out = run([tree_bin,  *flags, "--noreport", tmp])
-            bo_out   = run([bo_bin,    *flags, "--noreport", tmp])
+            args = [*flags, "--noreport", tmp]
+            if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
+                failures += 1
 
-            # Normalise absolute tmp path so output is path-independent
-            tree_out = tree_out.replace(tmp, "<ROOT>")
-            bo_out   = bo_out.replace(tmp, "<ROOT>")
-
-            if indent_insensitive:
-                tree_out = strip_indent(tree_out)
-                bo_out   = strip_indent(bo_out)
-
-            if tree_out == bo_out:
-                print(f"  {PASS}  {desc}")
-            else:
-                print(f"  {FAIL}  {desc}")
-                tree_lines = tree_out.splitlines()
-                bo_lines   = bo_out.splitlines()
-                max_lines  = max(len(tree_lines), len(bo_lines))
-                for i in range(max_lines):
-                    tl = tree_lines[i] if i < len(tree_lines) else "<missing>"
-                    bl = bo_lines[i]   if i < len(bo_lines)   else "<missing>"
-                    marker = "  " if tl == bl else "!!"
-                    print(f"    {marker} tree: {repr(tl)}")
-                    print(f"    {marker}   bo: {repr(bl)}")
+        for desc, args_factory, indent_insensitive in EDGE_CASES:
+            args = args_factory(tmp)
+            if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
                 failures += 1
 
     print()
-    total = len(CASES)
+    total = len(CASES) + len(EDGE_CASES)
     passed = total - failures
     print(f"{passed}/{total} tests passed")
     return 1 if failures else 0
