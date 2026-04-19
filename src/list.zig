@@ -17,8 +17,20 @@ extern var Level: isize;
 extern var htmldirlen: usize;
 
 var errbuf: [256]u8 = undefined;
-export var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
-export var dirpathoffset: usize = 0;
+var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
+var dirpathoffset: usize = 0;
+
+export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
+    // (optional) Hanging slashes are a real pain to deal with
+    var slash = c.url_encode(out, &realbasepath);
+    if (dirname[dirpathoffset] != 0) {
+        slash = slash or (dirname[dirpathoffset] == '/');
+        if (!slash) _ = c.fputc('/', out);
+        if (!c.url_encode(out, dirname + dirpathoffset)) _ = c.fputc('/', out);
+    } else if (!slash) {
+        _ = c.fputc('/', out);
+    }
+}
 
 //  TODO: Refactor the listing calls / when they are called.  A more thorough
 //  analysis of the different outputs is required.  This all is not as clean as I

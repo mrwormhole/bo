@@ -13,9 +13,6 @@ extern var dirs: [*c]c_int;
 extern var scheme: [*c]u8;
 extern var authority: [*c]u8;
 
-extern var realbasepath: [c.PATH_MAX]u8;
-extern var dirpathoffset: usize;
-
 // Persists across calls: written by unix_printinfo, re-read by unix_newline
 // when computing metafirst comment indentation.
 var info_buf: [512]u8 = std.mem.zeroes([512]u8);
@@ -39,15 +36,7 @@ fn open_hyperlink(dirname: [*c]u8, filename: [*c]u8) void {
     _ = c.fprintf(out, "\x1b]8;;%s", scheme);
     _ = c.url_encode(out, authority);
     _ = c.fprintf(out, ":");
-    // (optional) Hanging slashes are a real pain to deal with
-    var slash = c.url_encode(out, &realbasepath);
-    if (dirname[dirpathoffset] != 0) {
-        slash = slash or (dirname[dirpathoffset] == '/');
-        if (!slash) _ = c.fputc('/', out);
-        if (!c.url_encode(out, dirname + dirpathoffset)) _ = c.fputc('/', out);
-    } else if (!slash) {
-        _ = c.fputc('/', out);
-    }
+    c.emit_hyperlink_path(out, dirname);
     _ = c.url_encode(out, filename);
     _ = c.fprintf(out, "\x1b\\");
 }
