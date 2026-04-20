@@ -47,11 +47,13 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
         lstat_info = si.*;
     }
     const mode: u32 = @intCast(lstat_info.mode);
-    const s_ifmt: u32 = 0o170000;
-    lstat_info.isdir = (mode & s_ifmt) == 0o040000;
-    lstat_info.issok = (mode & s_ifmt) == 0o140000;
-    lstat_info.isfifo = (mode & s_ifmt) == 0o010000;
-    lstat_info.isexe = (mode & 0o111) != 0;
+    // Use platform S_IF* masks from the C headers via c import instead of hardcoded octals.
+    const s_ifmt: u32 = @as(u32, c.S_IFMT);
+    lstat_info.isdir = (mode & s_ifmt) == @as(u32, c.S_IFDIR);
+    lstat_info.issok = (mode & s_ifmt) == @as(u32, c.S_IFSOCK);
+    lstat_info.isfifo = (mode & s_ifmt) == @as(u32, c.S_IFIFO);
+    const exec_mask: u32 = @as(u32, c.S_IXUSR | c.S_IXGRP | c.S_IXOTH);
+    lstat_info.isexe = (mode & exec_mask) != 0;
     return &lstat_info;
 }
 
