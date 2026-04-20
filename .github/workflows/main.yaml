@@ -42,5 +42,4 @@ jobs:
 
       - name: Interop test
         run: |
-          zig build
-          ./scripts/interop.py tree ./zig-out/bin/bo
+          zig build && ./scripts/interop.py tree ./zig-out/bin/bo
