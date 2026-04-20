@@ -12,12 +12,11 @@ targets=(
 
 failed=0
 
-echo "Starting matrix build for Zig 0.15.2"
+echo "Starting matrix build for Zig..."
 
 for target in "${targets[@]}"; do
     echo "-------------------------------------------"
     echo "Building for: $target"
-    #echo "-------------------------------------------"
 
     if zig build -Dtarget="$target" -Doptimize=ReleaseFast; then
         echo "Successfully built $target"
@@ -28,6 +27,7 @@ for target in "${targets[@]}"; do
 done
 
 if [ $failed -ne 0 ]; then
+    echo
     echo "One or more builds failed."
     exit 1
 fi
