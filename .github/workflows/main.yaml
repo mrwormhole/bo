@@ -27,7 +27,7 @@ jobs:
         run: zig build test --summary all
 
       - name: Build
-        run: zig build
+        run: ./matrix-build.sh
 
       - name: Install tree
         env:
