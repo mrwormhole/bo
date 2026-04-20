@@ -27,7 +27,7 @@ jobs:
         run: zig build test --summary all
 
       - name: Build
-        run: zig build
+        run: ./matrix-build.sh
 
       - name: Install tree
         env:
@@ -41,4 +41,5 @@ jobs:
           tree --version
 
       - name: Interop test
-        run: ./scripts/interop.py tree ./zig-out/bin/bo
+        run: |
+          zig build && ./scripts/interop.py tree ./zig-out/bin/bo

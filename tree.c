@@ -18,7 +18,7 @@
 
 #include "tree.h"
 
-char *version = "bo (The Bodhi Tree) v0.0.4";
+char *version = "bo (The Bodhi Tree) v0.0.5";
 
 /* Globals */
 struct Flags flag;

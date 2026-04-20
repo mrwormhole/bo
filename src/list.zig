@@ -1,10 +1,61 @@
 //! Tree listing driver ported from list.c.
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 const c = @cImport({
     @cInclude("tree.h");
 });
+
+var lstat_info: c.struct__info = std.mem.zeroes(c.struct__info);
+
+/// On Linux, musl's struct_timespec uses bitfield padding that Zig's C
+/// translator demotes to opaque, making c.struct_stat unusable from Zig.
+/// The linux branch calls the kernel directly via fstatat and fills
+/// c.struct__info manually. On other platforms c.struct_stat translates
+/// cleanly, so we delegate time-field extraction to C's stat2info.
+/// The comptime-if ensures the inactive branch is never analyzed.
+fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
+    lstat_info = std.mem.zeroes(c.struct__info);
+    if (builtin.os.tag == .linux) {
+        var st: std.os.linux.Stat = undefined;
+        const rc = std.os.linux.fstatat(
+            std.os.linux.AT.FDCWD,
+            @as([*:0]const u8, @ptrCast(path)),
+            &st,
+            std.os.linux.AT.SYMLINK_NOFOLLOW,
+        );
+        if (std.os.linux.E.init(rc) != .SUCCESS) return null;
+        c.saveino(@intCast(st.ino), @intCast(st.dev));
+        dev_out.* = @intCast(st.dev);
+        lstat_info.linode = @intCast(st.ino);
+        lstat_info.ldev = @intCast(st.dev);
+        lstat_info.mode = @intCast(st.mode);
+        lstat_info.uid = @intCast(st.uid);
+        lstat_info.gid = @intCast(st.gid);
+        lstat_info.size = @intCast(st.size);
+        lstat_info.atime = @intCast(st.atim.sec);
+        lstat_info.ctime = @intCast(st.ctim.sec);
+        lstat_info.mtime = @intCast(st.mtim.sec);
+    } else {
+        var st: c.struct_stat = undefined;
+        if (c.lstat(path, &st) < 0) return null;
+        c.saveino(st.st_ino, st.st_dev);
+        dev_out.* = st.st_dev;
+        const si = c.stat2info(&st);
+        if (si == null) return null;
+        lstat_info = si.*;
+    }
+    const mode: u32 = @intCast(lstat_info.mode);
+    // Use platform S_IF* masks from the C headers via c import instead of hardcoded octals.
+    const s_ifmt: u32 = @as(u32, c.S_IFMT);
+    lstat_info.isdir = (mode & s_ifmt) == @as(u32, c.S_IFDIR);
+    lstat_info.issok = (mode & s_ifmt) == @as(u32, c.S_IFSOCK);
+    lstat_info.isfifo = (mode & s_ifmt) == @as(u32, c.S_IFIFO);
+    const exec_mask: u32 = @as(u32, c.S_IXUSR | c.S_IXGRP | c.S_IXOTH);
+    lstat_info.isexe = (mode & exec_mask) != 0;
+    return &lstat_info;
+}
 
 extern var flag: c.struct_Flags;
 extern var getfulltree: ?*const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]c.struct__info;
@@ -78,16 +129,15 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
         }
         if (flag.H) htmldirlen = c.strlen(dirname[i]);
 
-        var st: c.struct_stat = undefined;
-        var n: isize = c.lstat(dirname[i], &st);
+        var st_dev: c.dev_t = 0;
+        info = doLstat(dirname[i], &st_dev);
+        var n: isize = if (info == null) -1 else 0;
 
-        if (n >= 0) {
-            c.saveino(st.st_ino, st.st_dev);
-            info = c.stat2info(&st);
+        if (info != null) {
             info.*.name = @constCast(""); //dirname[i];
 
             if (needfulltree) {
-                dir = getfulltree.?(dirname[i], 0, st.st_dev, &info.*.size, &err);
+                dir = getfulltree.?(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
             } else {
                 c.push_files(dirname[i], &ig, &inf, true);
@@ -114,7 +164,7 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
         } else {
             lc.newline.?(info, 0, 0, 0);
             if (dir != null) {
-                subtotal = listdir(dirname[i], dir, 1, st.st_dev, needfulltree);
+                subtotal = listdir(dirname[i], dir, 1, st_dev, needfulltree);
                 subtotal.dirs += 1;
             }
         }

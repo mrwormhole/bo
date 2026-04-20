@@ -33,7 +33,6 @@ fn new_comment(phead: ?*c.struct_pattern, line: [*c][*c]u8, lines: c_int) *c.str
 }
 
 export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofile {
-    var st: c.struct_stat = undefined;
     var buf: [c.PATH_MAX]u8 = undefined;
     var rpath: [c.PATH_MAX]u8 = undefined;
     var line: [c.PATH_MAX][*c]u8 = undefined;
@@ -44,8 +43,9 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
     var phead: ?*c.struct_pattern = null;
     var pend: ?*c.struct_pattern = null;
 
-    const stat_rc = c.stat(path, &st);
-    const is_regular = stat_rc >= 0 and (st.st_mode & c.S_IFMT) == c.S_IFREG;
+    const path_slice = std.mem.span(path);
+    const stat_result = std.fs.cwd().statFile(path_slice) catch null;
+    const is_regular = if (stat_result) |st| st.kind == .file else false;
     if (!is_regular) {
         _ = c.snprintf(&buf, c.PATH_MAX, "%s/.info", path);
         fp = c.fopen(&buf, "r");

@@ -11,15 +11,15 @@ extern var xpattern: [c.PATH_MAX]u8;
 var filterstack: ?*c.struct_ignorefile = null;
 
 fn is_file(path: [*c]const u8) bool {
-    var st: c.struct_stat = undefined;
-    if (c.stat(path, &st) < 0) return false;
-    return (st.st_mode & c.S_IFMT) == c.S_IFREG;
+    const path_slice = std.mem.span(path);
+    const stat = std.fs.cwd().statFile(path_slice) catch return false;
+    return stat.kind == .file;
 }
 
 fn is_dir(path: [*c]const u8) bool {
-    var st: c.struct_stat = undefined;
-    if (c.stat(path, &st) < 0) return false;
-    return (st.st_mode & c.S_IFMT) == c.S_IFDIR;
+    const path_slice = std.mem.span(path);
+    const stat = std.fs.cwd().statFile(path_slice) catch return false;
+    return stat.kind == .directory;
 }
 
 export fn gittrim(s: [*c]u8) void {
