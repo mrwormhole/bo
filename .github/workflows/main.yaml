@@ -41,4 +41,6 @@ jobs:
           tree --version
 
       - name: Interop test
-        run: ./scripts/interop.py tree ./zig-out/bin/bo
+        run: |
+          zig build
+          ./scripts/interop.py tree ./zig-out/bin/bo
