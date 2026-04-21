@@ -17,6 +17,38 @@ PASS = f"{Color.GREEN}PASS{Color.RESET}"
 FAIL = f"{Color.RED}FAIL{Color.RESET}"
 
 
+def build_fromfile_fixture(root: str) -> None:
+    """Write paths.txt and tabs.txt for --fromfile / --fromtabfile tests."""
+    paths = [
+        "a",
+        "a/b",
+        "a/b/c",
+        "a/b/c/c1.txt",
+        "a/b/c/c2.txt",
+        "a/b/b1.txt",
+        "a/a1.txt",
+        "a/a2.txt",
+        "root.txt",
+        "link_to_file -> a/a1.txt",
+    ]
+    with open(os.path.join(root, "paths.txt"), "w") as fh:
+        fh.write("\n".join(paths) + "\n")
+
+    tab_lines = [
+        "a",
+        "\ta1.txt",
+        "\ta2.txt",
+        "\tb",
+        "\t\tb1.txt",
+        "\t\tc",
+        "\t\t\tc1.txt",
+        "\t\t\tc2.txt",
+        "root.txt",
+    ]
+    with open(os.path.join(root, "tabs.txt"), "w") as fh:
+        fh.write("\n".join(tab_lines) + "\n")
+
+
 def build_fixture(root: str) -> None:
     """Create a deterministic directory fixture under root."""
     dirs = [
@@ -146,6 +178,22 @@ EDGE_CASES = [
 ]
 
 
+FILE_CASES = [
+    ("fromfile basic",          lambda t: ["--fromfile",    "--noreport", os.path.join(t, "paths.txt")], False),
+    ("fromfile dirs only (-d)", lambda t: ["--fromfile",    "--noreport", "-d", os.path.join(t, "paths.txt")], False),
+    ("fromfile all (-a)",       lambda t: ["--fromfile",    "--noreport", "-a", os.path.join(t, "paths.txt")], False),
+    ("fromfile JSON (-J)",      lambda t: ["--fromfile",    "--noreport", "-J", os.path.join(t, "paths.txt")], True),
+    ("fromfile fflinks",        lambda t: ["--fromfile",    "--noreport", "--fflinks", os.path.join(t, "paths.txt")], False),
+    ("fromfile gitignore",      lambda t: ["--fromfile", "--noreport", "--gitignore", os.path.join(t, "paths.txt")], False),
+    ("fromfile info",           lambda t: ["--fromfile", "--noreport", "--info", os.path.join(t, "paths.txt")], False),
+    ("fromtabfile basic",       lambda t: ["--fromtabfile", "--noreport", os.path.join(t, "tabs.txt")], False),
+    ("fromtabfile dirs only",   lambda t: ["--fromtabfile", "--noreport", "-d", os.path.join(t, "tabs.txt")], False),
+    ("fromtabfile JSON",        lambda t: ["--fromtabfile", "--noreport", "-J", os.path.join(t, "tabs.txt")], True),
+    ("fromtabfile gitignore",   lambda t: ["--fromtabfile", "--noreport", "--gitignore", os.path.join(t, "tabs.txt")], False),
+    ("fromtabfile info",        lambda t: ["--fromtabfile", "--noreport", "--info", os.path.join(t, "tabs.txt")], False),
+]
+
+
 def strip_indent(output: str) -> str:
     return "\n".join(line.lstrip() for line in output.splitlines())
 
@@ -186,6 +234,7 @@ def main() -> int:
     tmpfs = "/dev/shm" if os.path.isdir("/dev/shm") else None
     with tempfile.TemporaryDirectory(dir=tmpfs) as tmp:
         build_fixture(tmp)
+        build_fromfile_fixture(tmp)
 
         for desc, flags, indent_insensitive in CASES:
             args = [*flags, "--noreport", tmp]
@@ -197,8 +246,13 @@ def main() -> int:
             if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
                 failures += 1
 
+        for desc, args_factory, indent_insensitive in FILE_CASES:
+            args = args_factory(tmp)
+            if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
+                failures += 1
+
     print()
-    total = len(CASES) + len(EDGE_CASES)
+    total = len(CASES) + len(EDGE_CASES) + len(FILE_CASES)
     passed = total - failures
     print(f"{passed}/{total} tests passed")
     return 1 if failures else 0
