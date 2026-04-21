@@ -17,7 +17,6 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     const sources = [_][]const u8{
         "tree.c",
         "color.c",
-        "file.c",
     };
 
     const exe = b.addExecutable(.{
@@ -57,6 +56,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     addZigObject(b, exe, target, optimize, "unix", .{});
     addZigObject(b, exe, target, optimize, "info", .{});
     addZigObject(b, exe, target, optimize, "filter", .{});
+    addZigObject(b, exe, target, optimize, "file", .{});
 
     return exe;
 }
