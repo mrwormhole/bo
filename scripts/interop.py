@@ -115,9 +115,15 @@ def build_fixture(root: str) -> None:
         fh.write(gitignore_body)
 
 
-def run(cmd: list[str]) -> str:
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.stdout
+def run(cmd: list[str], env: dict[str, str] | None = None) -> str:
+    # Decode as latin-1 so non-UTF-8 charset output (e.g. Big5, KOI8-R) round-trips
+    # through .replace()/splitlines() byte-identically instead of raising.
+    full_env = None
+    if env is not None:
+        full_env = os.environ.copy()
+        full_env.update(env)
+    result = subprocess.run(cmd, capture_output=True, env=full_env)
+    return result.stdout.decode("latin-1")
 
 
 # Each entry: (description, extra_flags, indent_insensitive)
@@ -162,6 +168,30 @@ CASES = [
     ("gitignore (--gitignore)",   ["--gitignore"], False),
     ("gitignore + all (-a)",      ["--gitignore", "-a"], False),
     ("JSON gitignore",            ["--gitignore", "-J"], True),
+    # Charset line-drawing bytes. ANSI emits VT100 G0 escapes (`x`, `t`, `q`,
+    # `m`) and Big5 emits 0xA2-prefixed byte pairs (`\xA2u`, `\xA2w`, `\xA2x`,
+    # `\xA2|`). The C source encoded several of these as octal escapes; the
+    # Zig port initially mistranslated `\170`/`\167` as hex `\xB8`/`\xB7`.
+    # Comparing byte-for-byte against tree catches that class of regression.
+    ("charset ANSI",              ["--charset=ANSI"],    False),
+    ("charset Big5",              ["--charset=Big5"],    False),
+    ("charset UTF-8",             ["--charset=UTF-8"],   False),
+    ("charset IBM437",            ["--charset=IBM437"],  False),
+    ("charset KOI8-R",            ["--charset=KOI8-R"],  False),
+    # Load-bearing charset shortcuts. tree.c wires -A to the ansi row and -S to
+    # the ibm_pc row (via `charset = "IBM437"`), so these flags are the only
+    # *non-deprecated* way to reach those tables without an explicit --charset.
+    ("-A ansilines (VT100)",      ["-A"],                False),
+    ("-S IBM437 line graphics",   ["-S"],                False),
+]
+
+
+# Locale-sensitive paths. tree.c:124-131 uses setlocale()+nl_langinfo(CODESET):
+# a UTF-8 locale picks the utf8 row, anything else (C/POSIX) falls through to
+# the ASCII sentinel. Both bo and tree must behave identically here.
+LOCALE_CASES = [
+    ("UTF-8 locale default",   {"LC_ALL": "C.UTF-8"}, [], False),
+    ("C locale (ASCII fallback)", {"LC_ALL": "C"},    [], False),
 ]
 
 
@@ -199,9 +229,10 @@ def strip_indent(output: str) -> str:
 
 
 def compare(desc: str, tree_args: list[str], bo_args: list[str], tmp: str,
-            indent_insensitive: bool, tree_bin: str, bo_bin: str) -> bool:
-    tree_out = run([tree_bin, *tree_args]).replace(tmp, "<ROOT>")
-    bo_out   = run([bo_bin,   *bo_args]  ).replace(tmp, "<ROOT>")
+            indent_insensitive: bool, tree_bin: str, bo_bin: str,
+            env: dict[str, str] | None = None) -> bool:
+    tree_out = run([tree_bin, *tree_args], env=env).replace(tmp, "<ROOT>")
+    bo_out   = run([bo_bin,   *bo_args],   env=env).replace(tmp, "<ROOT>")
 
     if indent_insensitive:
         tree_out = strip_indent(tree_out)
@@ -241,6 +272,11 @@ def main() -> int:
             if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
                 failures += 1
 
+        for desc, env, flags, indent_insensitive in LOCALE_CASES:
+            args = [*flags, "--noreport", tmp]
+            if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin, env=env):
+                failures += 1
+
         for desc, args_factory, indent_insensitive in EDGE_CASES:
             args = args_factory(tmp)
             if not compare(desc, args, args, tmp, indent_insensitive, tree_bin, bo_bin):
@@ -252,7 +288,7 @@ def main() -> int:
                 failures += 1
 
     print()
-    total = len(CASES) + len(EDGE_CASES) + len(FILE_CASES)
+    total = len(CASES) + len(LOCALE_CASES) + len(EDGE_CASES) + len(FILE_CASES)
     passed = total - failures
     print(f"{passed}/{total} tests passed")
     return 1 if failures else 0

@@ -73,7 +73,6 @@ struct sorts {
 
 /* Externs */
 /* color.c */
-extern char *leftcode, *rightcode, *endcode;
 extern const struct linedraw *linedraw;
 
 /* Time to switch to getopt()? */
