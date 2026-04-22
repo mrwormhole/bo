@@ -568,8 +568,6 @@ export fn color(mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) 
     return print_color(COL_NORMAL);
 }
 
-// Charsets provided by Kyosuke Tokoro (NBG01720@nifty.ne.jp)
-
 // Static buffer for getcharset() — mirrors C's `static char buffer[256]`.
 var getcharset_buf: [256]u8 = undefined;
 
