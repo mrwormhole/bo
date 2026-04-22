@@ -257,6 +257,14 @@ const cstable = [_]c.struct_linedraw{
 // Exported for use by tree.c and info.zig (mutable, set by initlinedraw)
 export var linedraw: [*c]const c.struct_linedraw = null;
 
+// On macOS/FreeBSD stderr is an inline function; on Linux it's a plain pointer.
+inline fn cStderr() ?*c.FILE {
+    return switch (builtin.os.tag) {
+        .linux => c.stderr,
+        else => c.stderr(),
+    };
+}
+
 // Hacked in DIR_COLORS support for linux. ------------------------------
 //
 //  If someone asked me, I'd extend dircolors, to provide more generic
@@ -584,12 +592,12 @@ export fn getcharset() [*c]const u8 {
 export fn initlinedraw(help: bool) void {
     if (help) {
         var i: usize = 0;
-        _ = c.fprintf(c.stderr, "Valid charsets include:\n");
+        _ = c.fprintf(cStderr(), "Valid charsets include:\n");
         while (i < cstable.len) : (i += 1) {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                _ = c.fprintf(c.stderr, "  %s\n", cstable[i].name[j]);
+                _ = c.fprintf(cStderr(), "  %s\n", cstable[i].name[j]);
             }
         }
         return;
