@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// Note: Windows native is not supported (tree.c requires POSIX).
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -14,10 +12,6 @@ pub fn build(b: *std.Build) void {
 }
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-    const sources = [_][]const u8{
-        "tree.c",
-    };
-
     const exe = b.addExecutable(.{
         .name = "bo",
         .root_module = b.createModule(.{
@@ -27,24 +21,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
-    const cflags = &[_][]const u8{
-        "-std=c11",
-        "-Wpedantic",
-        "-Wall",
-        "-Wextra",
-        "-Wstrict-prototypes",
-        "-Wshadow",
-        "-Wconversion",
-    };
-    exe.addCSourceFiles(.{
-        .files = &sources,
-        .flags = cflags,
-    });
-    addPreprocessorDefines(exe, target);
     exe.linkLibC();
 
     // strverscmp is linked as a separate object so the symbol is always
-    // available to the C code, on every platform.
+    // available to the Zig code, on every platform.
     addZigObject(b, exe, target, optimize, "strverscmp", .{ .link_libc = false, .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "hash", .{ .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "util", .{});
@@ -57,6 +37,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     addZigObject(b, exe, target, optimize, "filter", .{});
     addZigObject(b, exe, target, optimize, "file", .{});
     addZigObject(b, exe, target, optimize, "color", .{});
+    addZigObject(b, exe, target, optimize, "tree", .{});
 
     return exe;
 }
