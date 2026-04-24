@@ -132,8 +132,8 @@ int tree_main(int argc, char **argv)
   }
 
   lc = (struct listingcalls){
-    null_intro, null_outtro, unix_printinfo, unix_printfile, unix_error, unix_newline,
-    null_close, unix_report
+    noop, noop, unix_printinfo, unix_printfile, unix_error, unix_newline,
+    noop_close, unix_report
   };
 
 /* Still a hack, but assume that if the macro is defined, we can use it: */
@@ -343,7 +343,6 @@ int tree_main(int argc, char **argv)
 	    }
 	    /* Long options that don't take parameters should just use strcmp: */
 	    if (!strcmp("--help",argv[i])) {
-	      usage(2);
 	      exit(EXIT_SUCCESS);
 	    }
 	    if (!strcmp("--version",argv[i])) {
@@ -552,14 +551,12 @@ int tree_main(int argc, char **argv)
 	    }
 #endif
 	    fprintf(stderr,"tree: Invalid argument `%s'.\n",argv[i]);
-	    usage(1);
 	    exit(EXIT_FAILURE);
 	  }
 	  /* Falls through */
 	default:
 	  /* printf("here i = %d, n = %d\n", i, n); */
 	  fprintf(stderr,"tree: Invalid argument -`%c'.\n",argv[i][j]);
-	  usage(1);
 	  exit(EXIT_FAILURE);
 	  break;
 	}
@@ -578,7 +575,7 @@ int tree_main(int argc, char **argv)
   initlinedraw(false);
 
   if (showversion) {
-    print_version(true);
+    fprintf(outfile, "%s\n", version);
     exit(EXIT_SUCCESS);
   }
 
@@ -617,11 +614,6 @@ int tree_main(int argc, char **argv)
   return errors ? 2 : 0;
 }
 
-void print_version(int nl)
-{
-  fprintf(outfile, "%s%s", version, nl?"\n":"");
-}
-
 void setoutput(const char *filename)
 {
   if (filename == NULL) {
@@ -633,117 +625,6 @@ void setoutput(const char *filename)
       exit(EXIT_FAILURE);
     }
   }
-}
-
-void usage(int n)
-{
-  parse_dir_colors();
-  initlinedraw(false);
-
-  /*  \t9!123456789!123456789!123456789!123456789!123456789!123456789!123456789! */
-
-  fancy(n < 2? stderr: stdout,
-	"usage: \btree\r [\b-acdfghilnpqrstuvxACDFJQNSUX\r] [\b-L\r \flevel\r [\b-R\r]] [\b-H\r [-]\fbaseHREF\r]\n"
-	"\t[\b-T\r \ftitle\r] [\b-o\r \ffilename\r] [\b-P\r \fpattern\r] [\b-I\r \fpattern\r] [\b--gitignore\r]\n"
-	"\t[\b--gitfile\r[\b=\r]\ffile\r] [\b--matchdirs\r] [\b--metafirst\r] [\b--ignore-case\r]\n"
-	"\t[\b--nolinks\r] [\b--hintro\r[\b=\r]\ffile\r] [\b--houtro\r[\b=\r]\ffile\r] [\b--inodes\r] [\b--device\r]\n"
-	"\t[\b--sort\r[\b=\r]\fname\r] [\b--dirsfirst\r] [\b--filesfirst\r] [\b--filelimit\r[\b=\r]\f#\r] [\b--si\r]\n"
-	"\t[\b--du\r] [\b--prune\r] [\b--charset\r[\b=\r]\fX\r] [\b--timefmt\r[\b=\r]\fformat\r] [\b--fromfile\r]\n"
-	"\t[\b--fromtabfile\r] [\b--fflinks\r] [\b--info\r] [\b--infofile\r[\b=\r]\ffile\r] [\b--noreport\r]\n"
-	"\t[\b--hyperlink\r] [\b--scheme\r[\b=\r]\fschema\r] [\b--authority\r[\b=\r]\fhost\r] [\b--opt-toggle\r]\n"
-        "\t[\b--compress\r[\b=\r]\f#\r] [\b--condense\r] [\b--version\r] [\b--help\r]"
-#ifdef __linux__
-        " [\b--acl\r] [\b--selinux\r]\n"
-#else
-        "\n"
-#endif
-        "\t[\b--\r] [\fdirectory\r \b...\r]\n");
-
-  if (n < 2) return;
-  fancy(stdout,
-	"  \b------- Listing options -------\r\n"
-	"  \b-a\r            All files are listed.\n"
-	"  \b-d\r            List directories only.\n"
-	"  \b-l\r            Follow symbolic links like directories.\n"
-	"  \b-f\r            Print the full path prefix for each file.\n"
-	"  \b-x\r            Stay on current filesystem only.\n"
-	"  \b-L\r \flevel\r      Descend only \flevel\r directories deep.\n"
-	"  \b-R\r            Rerun tree when max dir level reached.\n"
-	"  \b-P\r \fpattern\r    List only those files that match the pattern given.\n"
-	"  \b-I\r \fpattern\r    Do not list files that match the given pattern.\n"
-	"  \b--gitignore\r   Filter by using \b.gitignore\r files.\n"
-	"  \b--gitfile\r \fX\r   Explicitly read a gitignore file.\n"
-	"  \b--ignore-case\r Ignore case when pattern matching.\n"
-	"  \b--matchdirs\r   Include directory names in \b-P\r pattern matching.\n"
-	"  \b--metafirst\r   Print meta-data at the beginning of each line.\n"
-	"  \b--prune\r       Prune empty directories from the output.\n"
-	"  \b--info\r        Print information about files found in \b.info\r files.\n"
-	"  \b--infofile\r \fX\r  Explicitly read info file.\n"
-	"  \b--noreport\r    Turn off file/directory count at end of tree listing.\n"
-	"  \b--charset\r \fX\r   Use charset \fX\r for terminal/HTML and indentation line output.\n"
-	"  \b--filelimit\r \f#\r Do not descend dirs with more than \f#\r files in them.\n"
-        "  \b--condense\r    Condense directory singletons to a single line of output.\n"
-	"  \b-o\r \ffilename\r   Output to file instead of stdout.\n"
-	"  \b------- File options -------\r\n"
-	"  \b-q\r            Print non-printable characters as '\b?\r'.\n"
-	"  \b-N\r            Print non-printable characters as is.\n"
-	"  \b-Q\r            Quote filenames with double quotes.\n"
-	"  \b-p\r            Print the protections for each file.\n"
-	"  \b-u\r            Displays file owner or UID number.\n"
-	"  \b-g\r            Displays file group owner or GID number.\n"
-	"  \b-s\r            Print the size in bytes of each file.\n"
-	"  \b-h\r            Print the size in a more human readable way.\n"
-	"  \b--si\r          Like \b-h\r, but use in SI units (powers of 1000).\n"
-	"  \b--du\r          Compute size of directories by their contents.\n"
-	"  \b-D\r            Print the date of last modification or (-c) status change.\n"
-	"  \b--timefmt\r \ffmt\r Print and format time according to the format \ffmt\r.\n"
-	"  \b-F\r            Appends '\b/\r', '\b=\r', '\b*\r', '\b@\r', '\b|\r' or '\b>\r' as per \bls -F\r.\n"
-	"  \b--inodes\r      Print inode number of each file.\n"
-	"  \b--device\r      Print device ID number to which each file belongs.\n"
-#ifdef __linux__
-        "  \b--acl\r         Print permissions with a + if an ACL is present.\n"
-        "  \b--selinux\r     Print the selinux security label if present.\n"
-#endif
-        );
-
-  fancy(stdout,
-	"  \b------- Sorting options -------\r\n"
-	"  \b-v\r            Sort files alphanumerically by version.\n"
-	"  \b-t\r            Sort files by last modification time.\n"
-	"  \b-c\r            Sort files by last status change time.\n"
-	"  \b-U\r            Leave files unsorted.\n"
-	"  \b-r\r            Reverse the order of the sort.\n"
-	"  \b--dirsfirst\r   List directories before files (\b-U\r disables).\n"
-	"  \b--filesfirst\r  List files before directories (\b-U\r disables).\n"
-	"  \b--sort\r \fX\r      Select sort: \b\fname\r,\b\fversion\r,\b\fsize\r,\b\fmtime\r,\b\fctime\r,\b\fnone\r.\n"
-	"  \b------- Graphics options -------\r\n"
-	"  \b-i\r            Don't print indentation lines.\n"
-	"  \b-A\r            Print ANSI lines graphic indentation lines.\n"
-	"  \b-S\r            Print with CP437 (console) graphics indentation lines.\n"
-	"  \b-n\r            Turn colorization off always (\b-C\r overrides).\n"
-	"  \b-C\r            Turn colorization on always.\n"
-        "  \b--compress\r \f#\r  Compress indentation lines.\n"
-	"  \b------- XML/HTML/JSON/HYPERLINK options -------\r\n"
-	"  \b-X\r            Prints out an XML representation of the tree.\n"
-	"  \b-J\r            Prints out an JSON representation of the tree.\n"
-	"  \b-H\r \fbaseHREF\r   Prints out HTML format with \fbaseHREF\r as top directory.\n"
-	"  \b-T\r \fstring\r     Replace the default HTML title and H1 header with \fstring\r.\n"
-	"  \b--nolinks\r     Turn off hyperlinks in HTML output.\n"
-	"  \b--hintro\r \fX\r    Use file \fX\r as the HTML intro.\n"
-	"  \b--houtro\r \fX\r    Use file \fX\r as the HTML outro.\n"
-	"  \b--hyperlink\r   Turn on OSC 8 terminal hyperlinks.\n"
-	"  \b--scheme\r \fX\r    Set OSC 8 hyperlink scheme, default \b\ffile://\r\n"
-	"  \b--authority\r \fX\r Set OSC 8 hyperlink authority/hostname.\n"
-	"  \b------- Input options -------\r\n"
-	"  \b--fromfile\r    Reads paths from files (\b.\r=stdin)\n"
-	"  \b--fromtabfile\r Reads trees from tab indented files (\b.\r=stdin)\n"
-	"  \b--fflinks\r     Process link information when using \b--fromfile\r.\n"
-	"  \b------- Miscellaneous options -------\r\n"
-	"  \b--opt-toggle\r  Enable option toggling.\n"
-	"  \b--version\r     Print version and exit.\n"
-	"  \b--help\r        Print usage and this help message and exit.\n"
-	"  \b--\r            Options processing terminator.\n");
-  exit(EXIT_SUCCESS);
 }
 
 /**

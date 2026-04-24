@@ -1,20 +1,3 @@
-// $Copyright: $
-// Copyright (c) 1996 - 2026 by Steve Baker (steve.baker.llc@gmail.com)
-//
-// This program is free software; you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation; either version 2 of the License, or
-// (at your option) any later version.
-//
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
-//
-// You should have received a copy of the GNU General Public License
-// along with this program; if not, write to the Free Software
-// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
-
 //! Main tree driver ported from tree.c.
 
 const std = @import("std");
@@ -1097,10 +1080,6 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
     return ret;
 }
 
-export fn print_version(nl: c_int) void {
-    _ = c.fprintf(outfile, "%s%s", version, @as([*c]const u8, if (nl != 0) "\n" else ""));
-}
-
 export fn setoutput(filename: [*c]const u8) void {
     if (filename == null) {
         if (outfile == null) outfile = cStdout();
@@ -1113,13 +1092,28 @@ export fn setoutput(filename: [*c]const u8) void {
     }
 }
 
-export fn usage(n: c_int) void {
+fn print_usage() void {
     c.parse_dir_colors();
     c.initlinedraw(false);
 
-    //  \t9!123456789!123456789!123456789!123456789!123456789!123456789!123456789!
+    c.fancy(cStderr(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+        "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
+        "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
+        "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
+        "\t[\x08--sort\r[\x08=\r]\x0cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0c#\r] [\x08--si\r]\n" ++
+        "\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0cX\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n" ++
+        "\t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0cfile\r] [\x08--noreport\r]\n" ++
+        "\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0cschema\r] [\x08--authority\r[\x08=\r]\x0chost\r] [\x08--opt-toggle\r]\n" ++
+        "\t[\x08--compress\r[\x08=\r]\x0c#\r] [\x08--condense\r] [\x08--version\r] [\x08--help\r]" ++
+        (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
+        "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
+}
 
-    c.fancy(if (n < 2) cStderr() else cStdout(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+fn print_help() void {
+    c.parse_dir_colors();
+    c.initlinedraw(false);
+
+    c.fancy(cStdout(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -1131,7 +1125,6 @@ export fn usage(n: c_int) void {
         (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
         "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
 
-    if (n < 2) return;
     c.fancy(cStdout(), @constCast("  \x08------- Listing options -------\r\n" ++
         "  \x08-a\r            All files are listed.\n" ++
         "  \x08-d\r            List directories only.\n" ++
@@ -1213,7 +1206,6 @@ export fn usage(n: c_int) void {
         "  \x08--version\r     Print version and exit.\n" ++
         "  \x08--help\r        Print usage and this help message and exit.\n" ++
         "  \x08--\r            Options processing terminator.\n"));
-    c.exit(c.EXIT_SUCCESS);
 }
 
 export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
@@ -1471,7 +1463,7 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             // Long options that don't take parameters should just use strcmp:
                             if (c.strcmp("--help", argv[i]) == 0) {
-                                usage(2);
+                                print_help();
                                 c.exit(c.EXIT_SUCCESS);
                             }
                             if (c.strcmp("--version", argv[i]) == 0) {
@@ -1696,18 +1688,18 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
                                 }
                             }
                             _ = c.fprintf(cStderr(), "tree: Invalid argument `%s'.\n", argv[i]);
-                            usage(1);
+                            print_usage();
                             c.exit(c.EXIT_FAILURE);
                         }
                         // Falls through
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
-                        usage(1);
+                        print_usage();
                         c.exit(c.EXIT_FAILURE);
                     },
                     else => {
                         // printf("here i = %d, n = %d\n", i, n);
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
-                        usage(1);
+                        print_usage();
                         c.exit(c.EXIT_FAILURE);
                     },
                 }
@@ -1732,7 +1724,7 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
     c.initlinedraw(false);
 
     if (showversion) {
-        print_version(1);
+        _ = c.fprintf(outfile, "%s\n", version);
         c.exit(c.EXIT_SUCCESS);
     }
 

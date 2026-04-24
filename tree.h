@@ -240,8 +240,6 @@ struct totals listdir(char *dirname, struct _info **dir, int lev, dev_t dev, boo
 /* tree.c */
 int tree_main(int argc, char **argv);
 void setoutput(const char *filename);
-void print_version(int nl);
-void usage(int);
 void push_files(const char *dir, struct ignorefile **ig, struct infofile **inf, bool top);
 int patignore(const char *name, bool isdir, bool checkpaths);
 int patinclude(const char *name, bool isdir, bool checkpaths);
