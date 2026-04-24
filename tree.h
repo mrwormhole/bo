@@ -250,7 +250,6 @@ int filesfirst(struct _info **, struct _info **);
 int dirsfirst(struct _info **, struct _info **);
 int alnumsort(struct _info **, struct _info **);
 int versort(struct _info **a, struct _info **b);
-int reversealnumsort(struct _info **, struct _info **);
 int mtimesort(struct _info **, struct _info **);
 int ctimesort(struct _info **, struct _info **);
 int sizecmp(off_t a, off_t b);

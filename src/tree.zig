@@ -691,6 +691,17 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
                 st_ino = st.st_ino;
             }
         }
+        // Orphan symlink: the target doesn't exist, so "target mode/dev/inode"
+        // are undefined. Zero them — downstream code reads st_mode as lnkmode
+        // (target type) and st_dev/st_ino as the saveino dedup key. Leaving
+        // them at the link's own lst_* values would lie: lnkmode would report
+        // S_IFLNK ("target is a symlink", meaningless) and saveino would key
+        // on the link itself. C handles this with memset(&st, 0, sizeof(st)).
+        if (rs < 0) {
+            st_mode = 0;
+            st_dev = 0;
+            st_ino = 0;
+        }
     }
 
     const isdir: bool = (st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR);

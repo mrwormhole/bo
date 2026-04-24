@@ -84,6 +84,11 @@ def build_fixture(root: str) -> None:
     os.symlink("a",        os.path.join(root, "link_to_dir"))
     os.symlink("a/a1.txt", os.path.join(root, "link_to_file"))
     os.symlink(".",        os.path.join(root, "link_loop"))
+    # Orphan symlink (target does not exist). C tree zeros `st` via memset
+    # when stat(2) fails on the target, so ent->lnkmode, ->dev, ->inode are
+    # all 0; -F must NOT append '@' and -C must render the target path in the
+    # "no color" (orphan) style rather than the live-symlink color.
+    os.symlink("__bo_missing_target__", os.path.join(root, "orphan_link"))
     # .info file exercises info.zig: # comments, pattern-then-tab-message
     # parsing, multi-line messages, multiple patterns sharing one message,
     # and orphan/empty-line handling.
@@ -160,6 +165,13 @@ CASES = [
     ("JSON follow links (-Jl)",  ["-J", "-l"], True),
     ("file-type suffix (-F)",    ["-F"],      False),
     ("file-type suffix follow links (-Fl)", ["-F", "-l"], False),
+    # Forced color (-C). Together with the orphan symlink in the fixture this
+    # pins the correct behavior in getinfo(): when stat() on a symlink target
+    # fails, the "target mode" fields must be zeroed, not left at the link's
+    # own lstat values — otherwise lnkmode reads as S_IFLNK and the broken
+    # target gets colored/suffixed as if it were a live symlink.
+    ("force color (-C)",         ["-C"],      False),
+    ("force color follow links (-Cl)", ["-C", "-l"], False),
     ("hyperlinks (--hyperlink)", ["--hyperlink"], False),
     ("hyperlinks + suffix",      ["--hyperlink", "-F"], False),
     ("info annotations (--info)", ["--info"], False),
