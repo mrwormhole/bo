@@ -100,16 +100,6 @@ export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
 //  had hoped it to be.
 extern var lc: c.struct_listingcalls;
 
-export fn null_intro() void {}
-
-export fn null_outtro() void {}
-
-export fn null_close(file: ?*c.struct__info, level: c_int, needcomma: c_int) void {
-    _ = file;
-    _ = level;
-    _ = needcomma;
-}
-
 export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
     var tot = c.struct_totals{ .files = 0, .dirs = 0, .size = 0 };
     var ig: ?*c.struct_ignorefile = null;

@@ -1459,28 +1459,6 @@ char Ftype(mode_t mode)
   return 0;
 }
 
-struct _info *stat2info(const struct stat *st)
-{
-  static struct _info info;
-
-  info.linode = st->st_ino;
-  info.ldev = st->st_dev;
-  info.mode = st->st_mode;
-  info.uid = st->st_uid;
-  info.gid = st->st_gid;
-  info.size = st->st_size;
-  info.atime = st->st_atime;
-  info.ctime = st->st_ctime;
-  info.mtime = st->st_mtime;
-
-  info.isdir  = ((st->st_mode & S_IFMT) == S_IFDIR);
-  info.issok  = ((st->st_mode & S_IFMT) == S_IFSOCK);
-  info.isfifo = ((st->st_mode & S_IFMT) == S_IFIFO);
-  info.isexe  = (st->st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) ? 1 : 0;
-
-  return &info;
-}
-
 char *fillinfo(char *buf, const struct _info *ent)
 {
   int n;

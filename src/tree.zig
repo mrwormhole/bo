@@ -1250,14 +1250,19 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
         }
     }
 
+    const noop = struct {
+        fn noop() callconv(.c) void {}
+        fn close(_: [*c]c.struct__info, _: c_int, _: c_int) callconv(.c) void {} // file, level, needcomma
+    };
+
     lc = c.struct_listingcalls{
-        .intro = c.null_intro,
-        .outtro = c.null_outtro,
+        .intro = noop.noop,
+        .outtro = noop.noop,
         .printinfo = c.unix_printinfo,
         .printfile = c.unix_printfile,
         .@"error" = c.unix_error,
         .newline = c.unix_newline,
-        .close = c.null_close,
+        .close = noop.close,
         .report = c.unix_report,
     };
 

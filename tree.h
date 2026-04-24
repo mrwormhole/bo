@@ -228,9 +228,6 @@ void json_close(struct _info *file, int level, int needcomma);
 void json_report(struct totals tot);
 
 /* list.c */
-void null_intro(void);
-void null_outtro(void);
-void null_close(struct _info *file, int level, int needcomma);
 void emit_tree(char **dirname, bool needfulltree);
 /* Writes the URL-encoded base + dirname segment of a hyperlink, using the
  * realbasepath/dirpathoffset state set during emit_tree. Handles hanging
@@ -269,7 +266,6 @@ char *do_date(time_t);
 void printit(const char *);
 int psize(char *buf, off_t size);
 char Ftype(mode_t mode);
-struct _info *stat2info(const struct stat *st);
 char *fillinfo(char *buf, const struct _info *ent);
 
 /* unix.c */
