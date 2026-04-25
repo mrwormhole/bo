@@ -265,7 +265,7 @@ export fn psize(buf: [*c]u8, size: c.off_t) c_int {
         const fmt2: [*c]const u8 = if (@divTrunc(sz + 52, usize_val) >= 10) " %3.0f%c" else " %3.1f%c";
         return c.sprintf(buf, fmt2, @as(f64, @floatFromInt(sz)) / @as(f64, @floatFromInt(usize_val)), @as(c_int, @intCast(unit[@intCast(idx)])));
     } else {
-        if (@sizeOf(c.off_t) == @sizeOf(c_longlong)) {
+        if (comptime @sizeOf(c.off_t) == 8) {
             return c.sprintf(buf, " %11lld", @as(c_longlong, @intCast(size)));
         } else {
             return c.sprintf(buf, " %9lld", @as(c_longlong, @intCast(size)));
