@@ -73,7 +73,14 @@ export fn json_indent(maxlevel: c_int) void {
 export fn json_fillinfo(ent: *c.struct__info) void {
     const out = outfile.?;
 
-    if (flag.inode) _ = c.fprintf(out, ",\"inode\":%lld", @as(c_longlong, @intCast(ent.inode)));
+    if (flag.inode) {
+        if (@sizeOf(c.ino_t) == @sizeOf(c_longlong)) {
+            _ = c.fprintf(out, " inode=\"%lld\"", @as(c_longlong, @intCast(ent.inode)));
+        } else {
+            _ = c.fprintf(out, " inode=\"%ld\"", @as(c_long, @intCast(ent.inode)));
+        }
+    }
+
     if (flag.dev) _ = c.fprintf(out, ",\"dev\":%d", @as(c_int, @intCast(ent.dev)));
     if (flag.p) {
         const mask: c.mode_t = c.S_IRWXU | c.S_IRWXG | c.S_IRWXO | c.S_ISUID | c.S_ISGID | c.S_ISVTX;
