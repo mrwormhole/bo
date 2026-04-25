@@ -219,7 +219,7 @@ export fn printit(s: [*c]const u8) void {
                 if (c.iswprint(@intCast(tp[0])) != 0) {
                     _ = c.fprintf(outfile, "%lc", @as(c.wint_t, @intCast(tp[0])));
                 } else {
-                    if (flag.q) _ = c.putc('?', outfile) else _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @intCast(tp[0])));
+                    if (flag.q) _ = c.putc('?', outfile) else _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @intCast(@as(i64, tp[0]))));
                 }
             }
             if (flag.Q) _ = c.putc('"', outfile);
