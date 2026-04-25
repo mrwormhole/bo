@@ -39,13 +39,9 @@ zig build && ./scripts/interop.py tree ./zig-out/bin/bo
 ./matrix-build.sh
 ```
 
-## Architecture
-
-This project is a gradual port of the C `tree` utility to Zig. The repository holds a **hybrid C+Zig build**: `tree.c` (the last remaining C file) is compiled directly by Zig's C compiler, while every other original C file has been replaced by a `.zig` counterpart.
-
 ### Build model
 
-`build.zig` compiles each `src/*.zig` file as a **separate object** via `addZigObject`, then links them all together with `tree.c` into the `bo` executable. Each object links libc, includes the root directory (so `@cInclude("tree.h")` resolves), and receives the platform preprocessor defines via `addPreprocessorDefines`.
+`build.zig` compiles each `src/*.zig` file as a **separate object** via `addZigObject`, then links them all together into the `bo` executable. Each object links libc, includes the root directory (so `@cInclude("tree.h")` resolves), and receives the platform preprocessor defines via `addPreprocessorDefines`.
 
 ### C/Zig interop pattern
 
