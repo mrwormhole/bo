@@ -5,8 +5,7 @@ const strverscmp = @import("strverscmp.zig");
 const hash = @import("hash.zig");
 const util = @import("util.zig");
 
-// Import C main fn
-extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
+const tree = @import("tree.zig");
 
 // Include tests from imported modules. Note: json.zig is intentionally
 // excluded — its exports bind to tree.c/file.c globals (flag, outfile,
@@ -46,7 +45,7 @@ pub fn main() !u8 {
     }
 
     const c_argc: c_int = @intCast(args.len);
-    const result = tree_main(c_argc, c_args.ptr);
+    const result = tree.run(c_argc, @ptrCast(c_args.ptr));
 
     return if (result >= 0) @intCast(result) else 1;
 }

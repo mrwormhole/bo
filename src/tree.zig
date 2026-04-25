@@ -8,6 +8,7 @@ const c = @cImport({
 });
 
 const stat = @import("stat.zig");
+const pat = @import("pattern.zig");
 
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
@@ -31,9 +32,7 @@ export var flag: c.struct_Flags = std.mem.zeroes(c.struct_Flags);
 export var lc: c.struct_listingcalls = std.mem.zeroes(c.struct_listingcalls);
 
 export var pattern: c_int = 0;
-export var maxpattern: c_int = 0;
 export var ipattern: c_int = 0;
-export var maxipattern: c_int = 0;
 export var patterns: [*c][*c]u8 = null;
 export var ipatterns: [*c][*c]u8 = null;
 
@@ -75,9 +74,6 @@ export var ifmt: [if (@hasDecl(c, "S_IFPORT")) 10 else 8]c.mode_t =
         .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, c.S_IFDOOR, c.S_IFPORT, 0 }
     else
         .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, 0 };
-
-// fmt is only used inside prot(); not needed by any other module
-const fmt_str: [*:0]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?";
 
 export var ftype: [if (@hasDecl(c, "S_IFPORT")) 11 else 9][*c]const u8 =
     if (@hasDecl(c, "S_IFPORT"))
@@ -157,13 +153,15 @@ var read_dir_pathsize: usize = 0;
 // ---------------------------------------------------------------------------
 
 export fn prot(m: c.mode_t) [*c]u8 {
-    const perms = "rwxrwxrwx";
+    const fmt_str: [*:0]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?"; // Illumos has doors and ports
+
     var i: c_int = 0;
     while (ifmt[@intCast(i)] != 0 and (m & c.S_IFMT) != ifmt[@intCast(i)]) : (i += 1) {}
     prot_buf[0] = fmt_str[@intCast(i)];
 
     // Nice, but maybe not so portable, it is should be no less portable than the
     // old code.
+    const perms = "rwxrwxrwx";
     var b: c.mode_t = c.S_IRUSR;
     var j: usize = 0;
     while (j < 9) : ({
@@ -253,6 +251,7 @@ export fn psize(buf: [*c]u8, size: c.off_t) c_int {
     const si_unit = "dkMGTPEZY";
     const unit: [*c]const u8 = if (flag.si) si_unit else iec_unit;
     const usize_val: c.off_t = if (flag.si) 1000 else 1024;
+
     var idx: c_int = if (size < usize_val) 0 else 1;
     var sz: c.off_t = size;
 
@@ -402,169 +401,6 @@ export fn fsizesort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int 
 }
 
 // ---------------------------------------------------------------------------
-// Pattern matching
-// ---------------------------------------------------------------------------
-
-fn condLower(ch: u8) u8 {
-    return if (flag.ignorecase) @intCast(c.tolower(ch)) else ch;
-}
-
-// Patmatch() code courtesy of Thomas Moore (dark@mama.indstate.edu)
-// '|' support added by David MacMahon (davidm@astron.Berkeley.EDU)
-// Case insensitive support added by Jason A. Donenfeld (Jason@zx2c4.com)
-// returns:
-//    1 on a match
-//    0 on a mismatch
-//   -1 on a syntax error in the pattern
-export fn patmatch(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool) c_int {
-    var match: c_int = 1;
-    var pprev: u8 = 0;
-    var buf = buf_in;
-    var pat = pat_in;
-
-    const bar: [*c]u8 = c.strchr(pat, '|');
-
-    // If a bar is found, call patmatch recursively on the two sub-patterns
-    if (bar != null) {
-        // If the bar is the first or last character, it's a syntax error
-        if (bar == pat or bar[1] == 0) {
-            return -1;
-        }
-        // Break pattern into two sub-patterns
-        bar[0] = 0;
-        match = patmatch(buf, pat, isdir);
-        if (match == 0) {
-            match = patmatch(buf, bar + 1, isdir);
-        }
-        // Join sub-patterns back into one pattern
-        bar[0] = '|';
-        return match;
-    }
-
-    while (pat[0] != 0 and match != 0) {
-        switch (pat[0]) {
-            '[' => {
-                pat += 1;
-                var n: c_int = undefined;
-                if (pat[0] != '^') {
-                    n = 1;
-                    match = 0;
-                } else {
-                    pat += 1;
-                    n = 0;
-                }
-                while (pat[0] != ']') {
-                    if (pat[0] == '\\') pat += 1;
-                    if (pat[0] == 0) return -1; // || *pat == '/'
-                    if (pat[1] == '-') {
-                        const m: u8 = pat[0];
-                        pat += 2;
-                        if (pat[0] == '\\' and pat[0] != 0) pat += 1;
-                        if (condLower(buf[0]) >= condLower(m) and condLower(buf[0]) <= condLower(pat[0]))
-                            match = n;
-                        if (pat[0] == 0) pat -= 1;
-                    } else if (condLower(buf[0]) == condLower(pat[0])) {
-                        match = n;
-                    }
-                    pat += 1;
-                }
-                buf += 1;
-            },
-            '*' => {
-                pat += 1;
-                if (pat[0] == 0) {
-                    const f: c_int = @intFromBool(c.strchr(buf, '/') == null);
-                    return f;
-                }
-                match = 0;
-                // "Support" ** for .gitignore support, mostly the same as *:
-                if (pat[0] == '*') {
-                    pat += 1;
-                    if (pat[0] == 0) return 1;
-
-                    while (buf[0] != 0) {
-                        match = patmatch(buf, pat, isdir);
-                        if (match != 0) break;
-                        // ** between two /'s is allowed to match a null /:
-                        if (pprev == '/' and pat[0] == '/' and pat[1] != 0) {
-                            match = patmatch(buf, pat + 1, isdir);
-                            if (match != 0) return match;
-                        }
-                        buf += 1;
-                        while (buf[0] != 0 and buf[0] != '/') : (buf += 1) {}
-                    }
-                } else {
-                    while (buf[0] != 0) {
-                        const old = buf;
-                        buf += 1;
-                        match = patmatch(old, pat, isdir);
-                        if (match != 0) break;
-                        if (buf[0] == '/') break;
-                    }
-                }
-                if (match == 0 and (buf[0] == 0 or buf[0] == '/')) match = patmatch(buf, pat, isdir);
-                return match;
-            },
-            '?' => {
-                if (buf[0] == 0) return 0;
-                buf += 1;
-            },
-            '/' => {
-                if (pat[1] == 0 and buf[0] == 0) return @intFromBool(isdir);
-                match = @intFromBool(buf[0] == pat[0]);
-                buf += 1;
-            },
-            '\\' => {
-                if (pat[0] != 0) pat += 1;
-                // Falls through
-                match = @intFromBool(condLower(buf[0]) == condLower(pat[0]));
-                buf += 1;
-            },
-            else => {
-                match = @intFromBool(condLower(buf[0]) == condLower(pat[0]));
-                buf += 1;
-            },
-        }
-        pprev = pat[0];
-        pat += 1;
-        if (match < 1) return match;
-    }
-    if (buf[0] == 0) return match;
-    return 0;
-}
-
-// True if file matches an -I pattern
-export fn patignore(name: [*c]const u8, isdir: bool, checkpaths: bool) c_int {
-    var i: c_int = 0;
-    while (i < ipattern) : (i += 1) {
-        if (patmatch(name, ipatterns[@intCast(i)], isdir) != 0) return 1;
-        if (checkpaths) {
-            var pc: [*c]const u8 = c.strchr(name, file_pathsep[0]);
-            while (pc != null and pc.?[0] != 0) {
-                if (patmatch(pc.? + 1, ipatterns[@intCast(i)], isdir) != 0) return 1;
-                pc = c.strchr(pc.? + 1, file_pathsep[0]);
-            }
-        }
-    }
-    return 0;
-}
-
-// True if name matches a -P pattern
-export fn patinclude(name: [*c]const u8, isdir: bool, checkpaths: bool) c_int {
-    var i: c_int = 0;
-    while (i < pattern) : (i += 1) {
-        if (patmatch(name, patterns[@intCast(i)], isdir) != 0) return 1;
-        if (checkpaths) {
-            var pc: [*c]const u8 = c.strchr(name, file_pathsep[0]);
-            while (pc != null and pc.?[0] != 0) {
-                if (patmatch(pc.? + 1, patterns[@intCast(i)], isdir) != 0) return 1;
-                pc = c.strchr(pc.? + 1, file_pathsep[0]);
-            }
-        }
-    }
-    return 0;
-}
-
 // ---------------------------------------------------------------------------
 // Linux-specific helpers
 // ---------------------------------------------------------------------------
@@ -692,12 +528,12 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
 
     const isdir: bool = (st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR);
 
-    if (flag.gitignore and c.filtercheck(path, name, @intFromBool(isdir))) return null;
+    if (flag.gitignore and c.filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
 
     if ((lst_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR) and !(flag.l and ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR)))) {
-        if (pattern != 0 and c.patinclude(name, isdir, false) == 0 and c.patinclude(path, isdir, true) == 0) return null;
+        if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, file_pathsep[0]) == 0) return null;
     }
-    if (ipattern != 0 and (c.patignore(name, isdir, false) != 0 or c.patignore(path, isdir, true) != 0)) return null;
+    if (ipattern != 0 and (pat.ignore(name, ipatterns[0..@intCast(ipattern)], isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or pat.ignore(path, ipatterns[0..@intCast(ipattern)], isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) return null;
 
     if (flag.d and ((st_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR))) return null;
 
@@ -818,7 +654,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
         if (info) |inf| {
             var com: ?*c.struct_comment = null;
             if (flag.showinfo) {
-                com = c.infocheck(read_dir_path, dname, infotop, inf.isdir);
+                com = c.infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
             }
             if (com != null) {
                 var cnt: usize = 0;
@@ -905,7 +741,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     }
     // if the directory name matches, turn off pattern matching for contents
     const last_name: [*c]const u8 = c.strrchr(d, file_pathsep[0]);
-    if (pattern != 0 and (c.patinclude(d, true, true) != 0 or (last_name != null and c.patinclude(last_name.? + 1, true, false) != 0))) {
+    if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name.? + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
         tmp_pattern = pattern;
         pattern = 0;
     }
@@ -1002,7 +838,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
             }
             // prune empty folders, unless they match the requested pattern
             if (flag.prune and entry.*.child == null and
-                !(flag.matchdirs and pattern != 0 and c.patinclude(entry.*.name, entry.*.isdir, false) != 0))
+                !(flag.matchdirs and pattern != 0 and pat.include(entry.*.name, patterns[0..@intCast(pattern)], entry.*.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
             {
                 const xp = entry;
                 var p: [*c][*c]c.struct__info = dir_ptr;
@@ -1201,8 +1037,17 @@ fn print_help() void {
         "  \x08--\r            Options processing terminator.\n"));
 }
 
-export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
+pub fn run(argc: c_int, argv: [*c][*c]u8) c_int {
     var dirname: [*c][*c]u8 = null;
+
+    const gpa = std.heap.c_allocator;
+
+    var patterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
+    var ipatterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
+
+    defer patterns_list.deinit(gpa);
+    defer ipatterns_list.deinit(gpa);
+
     var i: usize = 0;
     var j: usize = 0;
     var k: usize = 0;
@@ -1316,26 +1161,16 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -P option.\n");
                             c.exit(c.EXIT_FAILURE);
                         }
-                        if (pattern >= maxpattern - 1)
-                            patterns = @ptrCast(@alignCast(c.xrealloc(@ptrCast(patterns), @sizeOf([*c]u8) * @as(usize, @intCast(maxpattern + 10)))));
-                        maxpattern += 10;
-                        patterns[@intCast(pattern)] = argv[n];
-                        pattern += 1;
+                        patterns_list.append(gpa, argv[n]) catch c.exit(c.EXIT_FAILURE);
                         n += 1;
-                        patterns[@intCast(pattern)] = null;
                     },
                     'I' => {
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -I option.\n");
                             c.exit(c.EXIT_FAILURE);
                         }
-                        if (ipattern >= maxipattern - 1)
-                            ipatterns = @ptrCast(@alignCast(c.xrealloc(@ptrCast(ipatterns), @sizeOf([*c]u8) * @as(usize, @intCast(maxipattern + 10)))));
-                        maxipattern += 10;
-                        ipatterns[@intCast(ipattern)] = argv[n];
-                        ipattern += 1;
+                        ipatterns_list.append(gpa, argv[n]) catch c.exit(c.EXIT_FAILURE);
                         n += 1;
-                        ipatterns[@intCast(ipattern)] = null;
                     },
                     'A' => flag.ansilines = if (opt_toggle) !flag.ansilines else true,
                     'S' => charset = "IBM437",
@@ -1710,6 +1545,11 @@ export fn tree_main(argc: c_int, argv: [*c][*c]u8) c_int {
         }
     }
     if (p != 0) dirname[p] = null;
+
+    patterns = patterns_list.items.ptr;
+    pattern = @intCast(patterns_list.items.len);
+    ipatterns = ipatterns_list.items.ptr;
+    ipattern = @intCast(ipatterns_list.items.len);
 
     setoutput(outfilename);
 

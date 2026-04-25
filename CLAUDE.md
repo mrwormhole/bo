@@ -62,7 +62,7 @@ musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes t
 
 | File | Role |
 |------|------|
-| `src/main.zig` | Entry point: routes `bo man` to the embedded man page, otherwise calls `tree_main` from C |
+| `src/main.zig` | Entry point: routes `bo man` to the embedded man page, otherwise calls `run` |
 | `src/list.zig` | `emit_tree` / `listdir` — the recursive tree-printing driver |
 | `src/unix.zig` | Default text-mode listing callbacks (`unix_printinfo`, `unix_printfile`, etc.) |
 | `src/color.zig` | Terminal color and charset/linedraw support |

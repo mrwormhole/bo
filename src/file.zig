@@ -6,6 +6,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const pat = @import("pattern.zig");
+
 extern var flag: c.struct_Flags;
 extern var pattern: c_int;
 extern var ipattern: c_int;
@@ -16,6 +18,8 @@ extern var topsort: ?*const fn (
 extern var outfile: ?*c.FILE;
 extern var file_comment: [*c]u8;
 extern var file_pathsep: [*c]u8;
+extern var patterns: [*c][*c]u8;
+extern var ipatterns: [*c][*c]u8;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
 
@@ -164,15 +168,15 @@ fn fprune(
         if (show and !matched) {
             if (!ent[0].isdir) {
                 if (pattern != 0 and
-                    c.patinclude(ent[0].name, ent[0].isdir, false) == 0 and
-                    c.patinclude(fpath, ent[0].isdir, true) == 0) show = false;
+                    pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and
+                    pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) == 0) show = false;
                 if (ipattern != 0 and
-                    (c.patignore(ent[0].name, ent[0].isdir, false) != 0 or
-                        c.patignore(fpath, ent[0].isdir, true) != 0)) show = false;
+                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
+                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) show = false;
             } else {
                 if (pattern != 0 and
-                    (c.patinclude(ent[0].name, ent[0].isdir, false) != 0 or
-                        c.patinclude(fpath, ent[0].isdir, true) != 0))
+                    (pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
+                        pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0))
                 {
                     show = true;
                     matched = true;
@@ -180,16 +184,17 @@ fn fprune(
                     pattern = 0;
                 }
                 if (ipattern != 0 and
-                    (c.patignore(ent[0].name, ent[0].isdir, false) != 0 or
-                        c.patignore(fpath, ent[0].isdir, true) != 0)) show = false;
+                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
+                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) show = false;
             }
         }
 
-        if (flag.gitignore and c.filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir)))
+        if (flag.gitignore and c.filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir), flag.ignorecase)) {
             show = false;
+        }
 
         if (show and flag.showinfo) {
-            const com = c.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir);
+            const com = c.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
             if (com != null) {
                 var i: usize = 0;
                 while (com[0].desc[i] != null) : (i += 1) {}
