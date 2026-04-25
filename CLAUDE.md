@@ -51,19 +51,17 @@ zig build && ./scripts/interop.py tree ./zig-out/bin/bo
 const c = @cImport({ @cInclude("tree.h"); });
 ```
 
-- **Globals defined in `tree.c`** (e.g. `flag`, `outfile`, `dirs`, `pattern`, `basesort`) are accessed in Zig files as `extern var`.
 - **Functions provided by Zig** (e.g. `uidtoname`, `scopy`, `xmalloc`, `patmatch`) are declared with `export fn` so C code can call them.
 - Function pointer globals (`basesort`, `topsort`, `getfulltree`) require explicit `callconv(.c)` in their Zig type signatures.
 
 ### Linux struct_timespec workaround
 
-musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes to an opaque type, making `c.struct_stat` unusable from Zig on Linux. `list.zig` works around this by calling the kernel directly via `std.os.linux.fstatat` on Linux and filling `struct__info` fields manually, while non-Linux paths delegate to C's `stat2info`.
+musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes to an opaque type, making `c.struct_stat` unusable from Zig on Linux. `list.zig` works around this by calling the kernel directly via `std.os.linux.fstatat` on Linux and filling `struct__info` fields manually.
 
 ### Key source files
 
 | File | Role |
 |------|------|
-| `tree.c` | Last remaining C file — globals, CLI arg parsing, directory reading, sorting, pattern matching, formatting helpers |
 | `src/main.zig` | Entry point: routes `bo man` to the embedded man page, otherwise calls `tree_main` from C |
 | `src/list.zig` | `emit_tree` / `listdir` — the recursive tree-printing driver |
 | `src/unix.zig` | Default text-mode listing callbacks (`unix_printinfo`, `unix_printfile`, etc.) |
@@ -82,11 +80,3 @@ musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes t
 - **Unit tests** live inside `src/*.zig` files and are aggregated via `src/main.zig`'s `test { ... }` block. `json.zig` is intentionally excluded from the test binary because its exports bind to globals only present when the full C runtime is linked.
 - **Interop tests** (`scripts/interop.py`) run `bo` and the reference `tree` binary side-by-side over a deterministic fixture directory and diff their output.
 - **Man page verification** (`scripts/verify_man_page.py`) checks that `bo man` output matches the groff-formatted upstream man page.
-
-### Ongoing port
-
-`tree.c` is the only remaining C file. When porting a function from it to Zig:
-1. Add an `export fn` in a `src/tree.zig` (or appropriate existing module).
-2. Remove the C implementation and its prototype from `tree.h` (or keep the prototype pointing to the Zig export).
-3. Move any global variable definitions from `tree.c` to `tree.zig` as `export var`; all other modules already declare them as `extern var`.
-4. Once `tree.c` is empty, remove it from the `sources` slice in `build.zig`.

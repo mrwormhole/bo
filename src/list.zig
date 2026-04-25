@@ -7,23 +7,15 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const stat = @import("stat.zig");
+
 var lstat_info: c.struct__info = std.mem.zeroes(c.struct__info);
 
-/// On Linux, musl's struct_timespec uses bitfield padding that Zig's C
-/// translator demotes to opaque, making c.struct_stat unusable from Zig.
-/// Both branches fill lstat_info directly to avoid any dependency on
-/// stat2info or c.struct_stat from the Linux path.
 fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
     lstat_info = std.mem.zeroes(c.struct__info);
     if (builtin.os.tag == .linux) {
         var st: std.os.linux.Stat = undefined;
-        const rc = std.os.linux.fstatat(
-            std.os.linux.AT.FDCWD,
-            @as([*:0]const u8, @ptrCast(path)),
-            &st,
-            std.os.linux.AT.SYMLINK_NOFOLLOW,
-        );
-        if (std.os.linux.E.init(rc) != .SUCCESS) return null;
+        if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
         c.saveino(@intCast(st.ino), @intCast(st.dev));
         dev_out.* = @intCast(st.dev);
         lstat_info.linode = @intCast(st.ino);
@@ -59,7 +51,6 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
         }
     }
     const mode: u32 = @intCast(lstat_info.mode);
-    // Use platform S_IF* masks from the C headers via c import instead of hardcoded octals.
     const s_ifmt: u32 = @as(u32, c.S_IFMT);
     lstat_info.isdir = (mode & s_ifmt) == @as(u32, c.S_IFDIR);
     lstat_info.issok = (mode & s_ifmt) == @as(u32, c.S_IFSOCK);

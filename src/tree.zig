@@ -7,6 +7,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const stat = @import("stat.zig");
+
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
 // ---------------------------------------------------------------------------
@@ -599,17 +601,10 @@ fn selinux_context(path: [*c]const u8) [*c]u8 {
 // Filesystem functions
 // ---------------------------------------------------------------------------
 
-/// On Linux, musl's struct_timespec uses bitfield padding that Zig's C
 fn doLstatInfo(path: [*c]const u8, ent: *c.struct__info) bool {
     if (comptime builtin.os.tag == .linux) {
         var lst: std.os.linux.Stat = undefined;
-        const rc = std.os.linux.fstatat(
-            std.os.linux.AT.FDCWD,
-            @as([*:0]const u8, @ptrCast(path)),
-            &lst,
-            std.os.linux.AT.SYMLINK_NOFOLLOW,
-        );
-        if (std.os.linux.E.init(rc) != .SUCCESS) return false;
+        if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &lst)) return false;
         ent.mode = @intCast(lst.mode);
         ent.uid = @intCast(lst.uid);
         ent.gid = @intCast(lst.gid);
@@ -664,16 +659,8 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
 
     if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
         if (comptime builtin.os.tag == .linux) {
-            // On Linux (musl), c.struct_stat has opaque time fields making it
-            // unusable with std.mem.zeroes.  Use the kernel syscall directly.
             var lxst: std.os.linux.Stat = undefined;
-            const lxrc = std.os.linux.fstatat(
-                std.os.linux.AT.FDCWD,
-                @as([*:0]const u8, @ptrCast(path)),
-                &lxst,
-                0,
-            );
-            if (std.os.linux.E.init(lxrc) == .SUCCESS) {
+            if (stat.linuxStat(@ptrCast(path), 0, &lxst)) {
                 st_mode = @intCast(lxst.mode);
                 st_dev = @intCast(lxst.dev);
                 st_ino = @intCast(lxst.ino);
@@ -904,15 +891,9 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     if (Level >= 0 and lev > @as(c.u_long, @intCast(Level))) return null;
     if (flag.xdev and lev == 0) {
         if (comptime builtin.os.tag == .linux) {
-            // On Linux, c.struct_stat time fields are opaque; use fstatat to get st_dev.
-            var lst2: std.os.linux.Stat = undefined;
-            if (std.os.linux.E.init(std.os.linux.fstatat(
-                std.os.linux.AT.FDCWD,
-                @as([*:0]const u8, @ptrCast(d)),
-                &lst2,
-                0,
-            )) == .SUCCESS) {
-                dev = @intCast(lst2.dev);
+            var lst: std.os.linux.Stat = undefined;
+            if (stat.linuxStat(@ptrCast(d), 0, &lst)) {
+                dev = @intCast(lst.dev);
             }
         } else {
             var sb: c.struct_stat = undefined;
