@@ -23,7 +23,7 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
 
     exe.linkLibC();
     // Add a dedicated include dir that only exposes tree.h to the C importer.
-    exe.addIncludePath(b.path("c_include"));
+    exe.addAfterIncludePath(b.path("."));
 
     // strverscmp is linked as a separate object so the symbol is always
     // available to the Zig code, on every platform.
