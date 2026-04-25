@@ -22,6 +22,8 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     });
 
     exe.linkLibC();
+    // Add a dedicated include dir that only exposes tree.h to the C importer.
+    exe.addIncludePath(b.path("c_include"));
 
     // strverscmp is linked as a separate object so the symbol is always
     // available to the Zig code, on every platform.
@@ -37,7 +39,6 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     addZigObject(b, exe, target, optimize, "filter", .{});
     addZigObject(b, exe, target, optimize, "file", .{});
     addZigObject(b, exe, target, optimize, "color", .{});
-    addZigObject(b, exe, target, optimize, "tree", .{});
 
     return exe;
 }
@@ -73,14 +74,13 @@ fn addZigObject(
 fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
     // Universal defines for large file support
     exe.root_module.addCMacro("LARGEFILE_SOURCE", "");
-    exe.root_module.addCMacro("_FILE_OFFSET_BITS", "64");
 
     const os_tag = target.result.os.tag;
     switch (os_tag) {
         .linux => {
             exe.root_module.addCMacro("_DEFAULT_SOURCE", "");
         },
-        .solaris, .illumos => {
+        .illumos => {
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
             exe.root_module.addCMacro("_POSIX_C_SOURCE", "200112");
         },
