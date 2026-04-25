@@ -495,10 +495,11 @@ export fn patmatch(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool) c_int {
                     }
                 } else {
                     while (buf[0] != 0) {
-                        match = patmatch(buf, pat, isdir);
+                        const old = buf;
+                        buf += 1;
+                        match = patmatch(old, pat, isdir);
                         if (match != 0) break;
                         if (buf[0] == '/') break;
-                        buf += 1;
                     }
                 }
                 if (match == 0 and (buf[0] == 0 or buf[0] == '/')) match = patmatch(buf, pat, isdir);
