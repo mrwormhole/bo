@@ -828,8 +828,10 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
                 while (ci < cnt) : (ci += 1) inf.comment[ci] = c.scopy(com.?.desc[ci]);
                 inf.comment[cnt] = null;
             }
-            if (p == (ne - 1)) dl = @ptrCast(@alignCast(c.xrealloc(@ptrCast(dl), @sizeOf([*c]c.struct__info) * (ne + c.MINC))));
-            ne += if (p == (ne - 1)) c.MINC else 0;
+            if (p == (ne - 1)) {
+                dl = @ptrCast(@alignCast(c.xrealloc(@ptrCast(dl), @sizeOf([*c]c.struct__info) * (ne + c.MINC))));
+                ne += c.MINC;
+            }
             dl[p] = inf;
             p += 1;
         }
