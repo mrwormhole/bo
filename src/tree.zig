@@ -150,9 +150,6 @@ var getinfo_lbufsize: usize = 0;
 var read_dir_path: [*c]u8 = null;
 var read_dir_pathsize: usize = 0;
 
-// SIXMONTHS constant
-const SIXMONTHS: c.time_t = 6 * 31 * 24 * 60 * 60;
-
 // ---------------------------------------------------------------------------
 // Exported formatting helpers
 // ---------------------------------------------------------------------------
@@ -183,6 +180,7 @@ export fn prot(m: c.mode_t) [*c]u8 {
 
 export fn do_date(t: c.time_t) [*c]u8 {
     const tm = c.localtime(&t);
+    const six_months: c.time_t = 6 * 31 * 24 * 60 * 60;
 
     if (timefmt != null) {
         _ = c.strftime(&do_date_buf, 255, timefmt, tm);
@@ -190,7 +188,7 @@ export fn do_date(t: c.time_t) [*c]u8 {
     } else {
         const cur: c.time_t = c.time(null);
         // Use strftime() so that locale is respected:
-        if (t > cur or (t + SIXMONTHS) < cur) {
+        if (t > cur or (t + six_months) < cur) {
             _ = c.strftime(&do_date_buf, 255, "%b %e  %Y", tm);
         } else {
             _ = c.strftime(&do_date_buf, 255, "%b %e %R", tm);

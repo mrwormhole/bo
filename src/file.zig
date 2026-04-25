@@ -17,8 +17,7 @@ extern var outfile: ?*c.FILE;
 extern var file_comment: [*c]u8;
 extern var file_pathsep: [*c]u8;
 
-// 64K paths maximum
-const MAXPATH = 64 * 1024;
+const MAXPATH = 64 * 1024; // 64KB paths maximum
 
 // On macOS and BSD, the `stdin` C macro expands to `__stdinp`. cImport
 // translates it as a function pointer rather than a FILE*. Declare the

@@ -5,7 +5,6 @@
 | Macro | Purpose | Location |
 |-------|---------|----------|
 | `__ANDROID__` / `__ANDROID` | Android platform detection | tree.h |
-| `__linux__` | Linux platform detection | tree.h, tree.c |
 
 ## File Type Detection (Solaris Legacy)
 
@@ -27,7 +26,5 @@
 | Macro | Definition | Purpose |
 |-------|------------|---------|
 | `MAXPATH` | `64*1024` | Custom max path (64KB) |
-| `SIXMONTHS` | `(6*31*24*60*60)` | Time constant (6 months) |
 | `MINIT` | `30` | Initial dir entry allocation |
 | `MINC` | `20` | Allocation increment |
-| `UNUSED(x)` | `((void)x)` | Suppress unused variable warnings |
