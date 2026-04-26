@@ -14,6 +14,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const pat = @import("pattern.zig");
+
 extern var outfile: ?*c.FILE;
 extern var linedraw: [*c]const c.struct_linedraw;
 extern var xpattern: [c.PATH_MAX]u8;
@@ -163,7 +165,7 @@ export fn pop_infostack() ?*c.struct_infofile {
 
 /// Returns an info pointer if a path matches a pattern.
 /// top == 1 if called in a directory with a .info file.
-export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool) ?*c.struct_comment {
+export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool, ignore_case: bool) ?*c.struct_comment {
     if (infostack == null) return null;
 
     var top = top_in;
@@ -176,12 +178,12 @@ export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir
         while (com != null) : (com = com.?.next) {
             var p: ?*c.struct_pattern = com.?.pattern;
             while (p != null) : (p = p.?.next) {
-                const pat = p.?.pattern;
-                if (c.patmatch(path, pat, isdir) == 1) return com;
-                if (top != 0 and c.patmatch(name, pat, isdir) == 1) return com;
+                const pattern = p.?.pattern;
+                if (pat.match(path, pattern, isdir, ignore_case) == 1) return com;
+                if (top != 0 and pat.match(name, pattern, isdir, ignore_case) == 1) return com;
 
-                _ = c.sprintf(&xpattern[fpos], "%s", pat);
-                if (c.patmatch(path, &xpattern, isdir) == 1) return com;
+                _ = c.sprintf(&xpattern[fpos], "%s", pattern);
+                if (pat.match(path, &xpattern, isdir, ignore_case) == 1) return com;
             }
         }
         top = 0;

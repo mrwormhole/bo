@@ -85,8 +85,7 @@ inline fn getSymbolType(c: u8) u8 {
 ///   strverscmp("item#99", "item#100") < 0
 ///   strverscmp("alpha1", "alpha001") > 0
 ///
-/// Exported with C calling convention for interop with C code
-export fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
+pub fn strverscmp(s1: [*:0]const u8, s2: [*:0]const u8) c_int {
     // Identical pointers
     if (s1 == s2) return 0;
 

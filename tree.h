@@ -65,8 +65,6 @@
 #define MINIT		30	/* number of dir entries to initially allocate */
 #define MINC		20	/* allocation increment */
 
-#define UNUSED(x)	((void)x)
-
 /* tree.c / global */
 struct Flags {
   // TODO: Change these single letter flags to more meaningful names
@@ -181,7 +179,7 @@ struct _info **tabedfile_getfulltree(char *d, u_long lev, dev_t dev, off_t *size
 void gittrim(char *s);
 struct pattern *new_pattern(char *pattern);
 struct ignorefile *gitignore_search(const char *startpath, int depth);
-bool filtercheck(const char *path, const char *name, int isdir);
+bool filtercheck(const char *path, const char *name, int isdir, bool ignore_case);
 struct ignorefile *new_ignorefile(const char *basepath, const char *path, bool checkparents);
 void push_filterstack(struct ignorefile *ig);
 struct ignorefile *pop_filterstack(void);
@@ -212,7 +210,7 @@ void html_encode(FILE *fd, char *s);
 struct infofile *new_infofile(const char *path, bool checkparents);
 void push_infostack(struct infofile *inf);
 struct infofile *pop_infostack(void);
-struct comment *infocheck(const char *path, const char *name, int top, bool isdir);
+struct comment *infocheck(const char *path, const char *name, int top, bool isdir, bool ignore_case);
 void printcomment(size_t line, size_t lines, char *s);
 
 /* json.c */
@@ -228,9 +226,6 @@ void json_close(struct _info *file, int level, int needcomma);
 void json_report(struct totals tot);
 
 /* list.c */
-void null_intro(void);
-void null_outtro(void);
-void null_close(struct _info *file, int level, int needcomma);
 void emit_tree(char **dirname, bool needfulltree);
 /* Writes the URL-encoded base + dirname segment of a hyperlink, using the
  * realbasepath/dirpathoffset state set during emit_tree. Handles hanging
@@ -241,13 +236,8 @@ void emit_hyperlink_path(FILE *out, char *dirname);
 struct totals listdir(char *dirname, struct _info **dir, int lev, dev_t dev, bool hasfulltree);
 
 /* tree.c */
-int tree_main(int argc, char **argv);
 void setoutput(const char *filename);
-void print_version(int nl);
-void usage(int);
 void push_files(const char *dir, struct ignorefile **ig, struct infofile **inf, bool top);
-int patignore(const char *name, bool isdir, bool checkpaths);
-int patinclude(const char *name, bool isdir, bool checkpaths);
 struct _info **unix_getfulltree(char *d, u_long lev, dev_t dev, off_t *size, char **err);
 struct _info **read_dir(char *dir, ssize_t *n, int infotop);
 
@@ -255,13 +245,11 @@ int filesfirst(struct _info **, struct _info **);
 int dirsfirst(struct _info **, struct _info **);
 int alnumsort(struct _info **, struct _info **);
 int versort(struct _info **a, struct _info **b);
-int reversealnumsort(struct _info **, struct _info **);
 int mtimesort(struct _info **, struct _info **);
 int ctimesort(struct _info **, struct _info **);
 int sizecmp(off_t a, off_t b);
 int fsizesort(struct _info **a, struct _info **b);
 
-int patmatch(const char *buf, const char *pat, bool isdir);
 void indent(int maxlevel);
 void free_dir(struct _info **);
 char *prot(mode_t);
@@ -269,7 +257,6 @@ char *do_date(time_t);
 void printit(const char *);
 int psize(char *buf, off_t size);
 char Ftype(mode_t mode);
-struct _info *stat2info(const struct stat *st);
 char *fillinfo(char *buf, const struct _info *ent);
 
 /* unix.c */
@@ -295,6 +282,3 @@ int xml_error(char *error);
 void xml_newline(struct _info *file, int level, int postdir, int needcomma);
 void xml_close(struct _info *file, int level, int needcomma);
 void xml_report(struct totals tot);
-
-/* strverscmp.zig */
-int strverscmp(const char *s1, const char *s2);

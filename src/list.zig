@@ -7,25 +7,15 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const stat = @import("stat.zig");
+
 var lstat_info: c.struct__info = std.mem.zeroes(c.struct__info);
 
-/// On Linux, musl's struct_timespec uses bitfield padding that Zig's C
-/// translator demotes to opaque, making c.struct_stat unusable from Zig.
-/// The linux branch calls the kernel directly via fstatat and fills
-/// c.struct__info manually. On other platforms c.struct_stat translates
-/// cleanly, so we delegate time-field extraction to C's stat2info.
-/// The comptime-if ensures the inactive branch is never analyzed.
 fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
     lstat_info = std.mem.zeroes(c.struct__info);
     if (builtin.os.tag == .linux) {
         var st: std.os.linux.Stat = undefined;
-        const rc = std.os.linux.fstatat(
-            std.os.linux.AT.FDCWD,
-            @as([*:0]const u8, @ptrCast(path)),
-            &st,
-            std.os.linux.AT.SYMLINK_NOFOLLOW,
-        );
-        if (std.os.linux.E.init(rc) != .SUCCESS) return null;
+        if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
         c.saveino(@intCast(st.ino), @intCast(st.dev));
         dev_out.* = @intCast(st.dev);
         lstat_info.linode = @intCast(st.ino);
@@ -42,12 +32,25 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
         if (c.lstat(path, &st) < 0) return null;
         c.saveino(st.st_ino, st.st_dev);
         dev_out.* = st.st_dev;
-        const si = c.stat2info(&st);
-        if (si == null) return null;
-        lstat_info = si.*;
+        lstat_info.linode = st.st_ino;
+        lstat_info.ldev = st.st_dev;
+        lstat_info.mode = st.st_mode;
+        lstat_info.uid = st.st_uid;
+        lstat_info.gid = st.st_gid;
+        lstat_info.size = st.st_size;
+        // st_atime/ctime/mtime are C macros, not real struct fields.
+        // macOS uses st_atimespec; FreeBSD and other POSIX systems use st_atim.
+        if (comptime @hasField(c.struct_stat, "st_atimespec")) {
+            lstat_info.atime = st.st_atimespec.tv_sec;
+            lstat_info.ctime = st.st_ctimespec.tv_sec;
+            lstat_info.mtime = st.st_mtimespec.tv_sec;
+        } else {
+            lstat_info.atime = st.st_atim.tv_sec;
+            lstat_info.ctime = st.st_ctim.tv_sec;
+            lstat_info.mtime = st.st_mtim.tv_sec;
+        }
     }
     const mode: u32 = @intCast(lstat_info.mode);
-    // Use platform S_IF* masks from the C headers via c import instead of hardcoded octals.
     const s_ifmt: u32 = @as(u32, c.S_IFMT);
     lstat_info.isdir = (mode & s_ifmt) == @as(u32, c.S_IFDIR);
     lstat_info.issok = (mode & s_ifmt) == @as(u32, c.S_IFSOCK);
@@ -87,16 +90,6 @@ export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
 //  analysis of the different outputs is required.  This all is not as clean as I
 //  had hoped it to be.
 extern var lc: c.struct_listingcalls;
-
-export fn null_intro() void {}
-
-export fn null_outtro() void {}
-
-export fn null_close(file: ?*c.struct__info, level: c_int, needcomma: c_int) void {
-    _ = file;
-    _ = level;
-    _ = needcomma;
-}
 
 export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
     var tot = c.struct_totals{ .files = 0, .dirs = 0, .size = 0 };

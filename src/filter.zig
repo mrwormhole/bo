@@ -6,6 +6,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const pat = @import("pattern.zig");
+
 extern var xpattern: [c.PATH_MAX]u8;
 
 var filterstack: ?*c.struct_ignorefile = null;
@@ -190,7 +192,7 @@ export fn flush_filterstack() ?*c.struct_ignorefile {
 }
 
 /// true if remove filter matches and no reverse filter matches.
-export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int) bool {
+export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, ignore_case: bool) bool {
     var filter = false;
     const isdir_b = isdir != 0;
 
@@ -205,14 +207,14 @@ export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int) bool
         while (p != null) : (p = p.?.next) {
             const cp = p.?;
             if (cp.relative != 0) {
-                if (c.patmatch(name, cp.pattern, isdir_b) == 1) {
+                if (pat.match(name, cp.pattern, isdir_b, ignore_case) == 1) {
                     filter = true;
                     // printf(" --r %s %s %d\n", name, p->pattern, filter);
                     break;
                 }
             } else {
                 _ = c.sprintf(&xpattern[fpos], "%s", cp.pattern);
-                if (c.patmatch(path, &xpattern, isdir_b) == 1) {
+                if (pat.match(path, &xpattern, isdir_b, ignore_case) == 1) {
                     filter = true;
                     // printf(" --a %s %s %d\n", name, xpattern, filter);
                     break;
@@ -231,10 +233,10 @@ export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int) bool
         while (p != null) : (p = p.?.next) {
             const cp = p.?;
             if (cp.relative != 0) {
-                if (c.patmatch(name, cp.pattern, isdir_b) == 1) return false;
+                if (pat.match(name, cp.pattern, isdir_b, ignore_case) == 1) return false;
             } else {
                 _ = c.sprintf(&xpattern[fpos], "%s", cp.pattern);
-                if (c.patmatch(path, &xpattern, isdir_b) == 1) return false;
+                if (pat.match(path, &xpattern, isdir_b, ignore_case) == 1) return false;
             }
         }
     }

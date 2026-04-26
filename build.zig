@@ -1,7 +1,5 @@
 const std = @import("std");
 
-// Note: Windows native is not supported (tree.c requires POSIX).
-
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
@@ -14,10 +12,6 @@ pub fn build(b: *std.Build) void {
 }
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
-    const sources = [_][]const u8{
-        "tree.c",
-    };
-
     const exe = b.addExecutable(.{
         .name = "bo",
         .root_module = b.createModule(.{
@@ -27,25 +21,10 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
-    const cflags = &[_][]const u8{
-        "-std=c11",
-        "-Wpedantic",
-        "-Wall",
-        "-Wextra",
-        "-Wstrict-prototypes",
-        "-Wshadow",
-        "-Wconversion",
-    };
-    exe.addCSourceFiles(.{
-        .files = &sources,
-        .flags = cflags,
-    });
-    addPreprocessorDefines(exe, target);
     exe.linkLibC();
+    // Add a dedicated include dir that only exposes tree.h to the C importer.
+    exe.addAfterIncludePath(b.path("."));
 
-    // strverscmp is linked as a separate object so the symbol is always
-    // available to the C code, on every platform.
-    addZigObject(b, exe, target, optimize, "strverscmp", .{ .link_libc = false, .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "hash", .{ .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "util", .{});
     addZigObject(b, exe, target, optimize, "json", .{});
@@ -92,14 +71,13 @@ fn addZigObject(
 fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
     // Universal defines for large file support
     exe.root_module.addCMacro("LARGEFILE_SOURCE", "");
-    exe.root_module.addCMacro("_FILE_OFFSET_BITS", "64");
 
     const os_tag = target.result.os.tag;
     switch (os_tag) {
         .linux => {
             exe.root_module.addCMacro("_DEFAULT_SOURCE", "");
         },
-        .solaris, .illumos => {
+        .illumos => {
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
             exe.root_module.addCMacro("_POSIX_C_SOURCE", "200112");
         },
@@ -127,7 +105,7 @@ fn makeRunStep(b: *std.Build, exe: *std.Build.Step.Compile) void {
 fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
         }),

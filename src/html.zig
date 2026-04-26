@@ -21,7 +21,6 @@ extern var outfile: ?*c.FILE;
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
 extern fn fillinfo(buf: [*c]u8, ent: *const c.struct__info) [*c]u8;
 extern fn indent(maxlevel: c_int) void;
-extern fn print_version(nl: c_int) void;
 
 export var htmldirlen: usize = 0;
 
@@ -89,7 +88,7 @@ export fn html_intro() void {
         \\ <meta name="Author" content="Made by 'tree'">
         \\ <meta name="GENERATOR" content="
     ++ "", cs);
-    print_version(0);
+    _ = c.fprintf(out, "%s", version);
     _ = c.fprintf(out,
         \\">
         \\ <title>%s</title>

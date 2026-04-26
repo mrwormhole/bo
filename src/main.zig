@@ -1,34 +1,19 @@
 const std = @import("std");
 
 const man = @import("man.zig");
-const strverscmp = @import("strverscmp.zig");
-const hash = @import("hash.zig");
-const util = @import("util.zig");
-
-// Import C main fn
-extern fn tree_main(argc: c_int, argv: [*][*:0]u8) c_int;
-
-// Include tests from imported modules. Note: json.zig is intentionally
-// excluded — its exports bind to tree.c/file.c globals (flag, outfile,
-// ifmt, ftype, prot, psize, do_date), which the standalone test binary
-// does not link. Behavioral coverage lives in scripts/interop.py.
-test {
-    _ = strverscmp;
-    _ = hash;
-    _ = util;
-}
+const tree = @import("tree.zig");
 
 pub fn printStdout(content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
     const stdout = &stdout_writer.interface;
-
     try stdout.writeAll(content);
     try stdout.flush();
 }
 
 pub fn main() !u8 {
-    const allocator = std.heap.page_allocator;
+    const allocator = std.heap.c_allocator;
+
     const args = try std.process.argsAlloc(allocator);
     defer std.process.argsFree(allocator, args);
 
@@ -45,8 +30,6 @@ pub fn main() !u8 {
         c_args[i] = arg.ptr;
     }
 
-    const c_argc: c_int = @intCast(args.len);
-    const result = tree_main(c_argc, c_args.ptr);
-
+    const result = tree.run(allocator, @intCast(args.len), @ptrCast(c_args.ptr));
     return if (result >= 0) @intCast(result) else 1;
 }
