@@ -71,7 +71,7 @@ musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes t
 | `src/info.zig` | `.info` file comments |
 | `src/file.zig` | `--fromfile` / `--fromtabfile` tree builders |
 | `src/util.zig` | `xmalloc`, `scopy`, `pathconcat`, `is_singleton` |
-| `src/strverscmp.zig` | Version-aware string compare (linked as a separate object, always available to C) |
+| `src/strverscmp.zig` | Version-aware string compare |
 | `src/json.zig`, `src/xml.zig`, `src/html.zig` | Output format callbacks |
 | `src/man.zig` | Embedded man page (generated — see `scripts/generate_full_man.py`) |
 

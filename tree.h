@@ -65,8 +65,6 @@
 #define MINIT		30	/* number of dir entries to initially allocate */
 #define MINC		20	/* allocation increment */
 
-#define UNUSED(x)	((void)x)
-
 /* tree.c / global */
 struct Flags {
   // TODO: Change these single letter flags to more meaningful names
@@ -284,6 +282,3 @@ int xml_error(char *error);
 void xml_newline(struct _info *file, int level, int postdir, int needcomma);
 void xml_close(struct _info *file, int level, int needcomma);
 void xml_report(struct totals tot);
-
-/* strverscmp.zig */
-int strverscmp(const char *s1, const char *s2);

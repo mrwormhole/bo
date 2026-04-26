@@ -9,6 +9,7 @@ const c = @cImport({
 
 const stat = @import("stat.zig");
 const pat = @import("pattern.zig");
+const strverscmp = @import("strverscmp.zig").strverscmp;
 
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
@@ -368,7 +369,7 @@ export fn alnumsort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int 
 }
 
 export fn versort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
-    const v = c.strverscmp(a[0].*.name, b[0].*.name);
+    const v = strverscmp(a[0].*.name, b[0].*.name);
     return if (flag.reverse) -v else v;
 }
 
@@ -1037,10 +1038,8 @@ fn print_help() void {
         "  \x08--\r            Options processing terminator.\n"));
 }
 
-pub fn run(argc: c_int, argv: [*c][*c]u8) c_int {
+pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     var dirname: [*c][*c]u8 = null;
-
-    const gpa = std.heap.c_allocator;
 
     var patterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
     var ipatterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;

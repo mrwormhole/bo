@@ -25,9 +25,6 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     // Add a dedicated include dir that only exposes tree.h to the C importer.
     exe.addAfterIncludePath(b.path("."));
 
-    // strverscmp is linked as a separate object so the symbol is always
-    // available to the Zig code, on every platform.
-    addZigObject(b, exe, target, optimize, "strverscmp", .{ .link_libc = false, .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "hash", .{ .include_root = false, .defines = false });
     addZigObject(b, exe, target, optimize, "util", .{});
     addZigObject(b, exe, target, optimize, "json", .{});
@@ -108,7 +105,7 @@ fn makeRunStep(b: *std.Build, exe: *std.Build.Step.Compile) void {
 fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/main.zig"),
+            .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
         }),
