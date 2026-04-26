@@ -1,10 +1,6 @@
 const std = @import("std");
 
 const man = @import("man.zig");
-const strverscmp = @import("strverscmp.zig");
-const hash = @import("hash.zig");
-const util = @import("util.zig");
-
 const tree = @import("tree.zig");
 
 pub fn printStdout(content: []const u8) !void {
