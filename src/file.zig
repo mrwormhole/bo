@@ -6,20 +6,32 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
 const pat = @import("pattern.zig");
 
-extern var flag: c.struct_Flags;
+extern var flag: types.Flags;
 extern var pattern: c_int;
 extern var ipattern: c_int;
 extern var topsort: ?*const fn (
-    [*c][*c]c.struct__info,
-    [*c][*c]c.struct__info,
+    [*c][*c]types.Info,
+    [*c][*c]types.Info,
 ) callconv(.c) c_int;
 extern var outfile: ?*c.FILE;
 extern var file_comment: [*c]u8;
 extern var file_pathsep: [*c]u8;
 extern var patterns: [*c][*c]u8;
 extern var ipatterns: [*c][*c]u8;
+
+extern fn xmalloc(size: usize) *anyopaque;
+extern fn scopy(s: [*c]const u8) [*c]u8;
+extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
+extern fn flush_filterstack() ?*types.IgnoreFile;
+extern fn pop_infostack() ?*types.InfoFile;
+extern fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, ignore_case: bool) bool;
+extern fn infocheck(path: [*c]const u8, name: [*c]const u8, top: c_int, isdir: bool, ignore_case: bool) ?*types.Comment;
+extern fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8;
+extern fn free_dir(d: [*c][*c]types.Info) void;
+extern fn is_singleton(dir: *types.Info) bool;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
 
@@ -72,10 +84,10 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
     return s;
 }
 
-fn newent(name: [*c]const u8) *c.struct__info {
-    const n: *c.struct__info = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct__info))));
-    @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(c.struct__info)], 0);
-    n.name = c.scopy(name);
+fn newent(name: [*c]const u8) *types.Info {
+    const n: *types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Info))));
+    @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(types.Info)], 0);
+    n.name = scopy(name);
     n.child = null;
     n.tchild = null;
     n.next = null;
@@ -83,14 +95,14 @@ fn newent(name: [*c]const u8) *c.struct__info {
 }
 
 // Don't insertion sort, let fprune() do the sort if necessary
-fn search(dir: *[*c]c.struct__info, name: [*c]const u8) *c.struct__info {
+fn search(dir: *[*c]types.Info, name: [*c]const u8) *types.Info {
     if (dir.* == null) {
         const n = newent(name);
         dir.* = n;
         return n;
     }
-    var prev: [*c]c.struct__info = dir.*;
-    var ptr: [*c]c.struct__info = dir.*;
+    var prev: [*c]types.Info = dir.*;
+    var ptr: [*c]types.Info = dir.*;
     while (ptr != null) : (ptr = ptr[0].next) {
         if (c.strcmp(ptr[0].name, name) == 0) return @ptrCast(ptr);
         prev = ptr;
@@ -101,8 +113,8 @@ fn search(dir: *[*c]c.struct__info, name: [*c]const u8) *c.struct__info {
     return n;
 }
 
-fn freefiletree(ent: [*c]c.struct__info) void {
-    var ptr: [*c]c.struct__info = ent;
+fn freefiletree(ent: [*c]types.Info) void {
+    var ptr: [*c]types.Info = ent;
     while (ptr != null) {
         if (ptr[0].tchild != null) freefiletree(ptr[0].tchild);
         const t = ptr;
@@ -116,20 +128,20 @@ fn freefiletree(ent: [*c]c.struct__info) void {
 // TODO: Perhaps make this the primary prune function and have unix_getfulltree
 //       call it the same as the *file_getfulltree functions do.
 fn fprune(
-    head: [*c]c.struct__info,
+    head: [*c]types.Info,
     path: [*c]const u8,
     matched_in: bool,
     root: bool,
-) [*c][*c]c.struct__info {
-    var dir: [*c][*c]c.struct__info = null;
-    var new_head: [*c]c.struct__info = null;
-    var end: [*c]c.struct__info = null;
+) [*c][*c]types.Info {
+    var dir: [*c][*c]types.Info = null;
+    var new_head: [*c]types.Info = null;
+    var end: [*c]types.Info = null;
     var count: usize = 0;
     const defmatched = matched_in;
     var matched = matched_in;
     var tmp_pattern: c_int = 0;
 
-    const fpath: [*c]u8 = @ptrCast(@alignCast(c.xmalloc(MAXPATH)));
+    const fpath: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
     defer std.c.free(fpath);
 
     const path_len = c.strlen(path);
@@ -143,11 +155,11 @@ fn fprune(
     cur += 1;
     const cur_offset = path_len + 1;
 
-    var ig: [*c]c.struct_ignorefile = null;
-    var inf: [*c]c.struct_infofile = null;
-    c.push_files(path, @ptrCast(&ig), @ptrCast(&inf), root);
+    var ig: [*c]types.IgnoreFile = null;
+    var inf: [*c]types.InfoFile = null;
+    push_files(path, @ptrCast(&ig), @ptrCast(&inf), root);
 
-    var ent: [*c]c.struct__info = head;
+    var ent: [*c]types.Info = head;
     while (ent != null) {
         const name_len = c.strlen(ent[0].name);
         if (cur_offset + name_len >= MAXPATH) {
@@ -189,18 +201,18 @@ fn fprune(
             }
         }
 
-        if (flag.gitignore and c.filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir), flag.ignorecase)) {
+        if (flag.gitignore and filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir), flag.ignorecase)) {
             show = false;
         }
 
         if (show and flag.showinfo) {
-            const com = c.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
+            const com = infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
             if (com != null) {
                 var i: usize = 0;
-                while (com[0].desc[i] != null) : (i += 1) {}
-                ent[0].comment = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * (i + 1))));
+                while (com.?.desc[i] != null) : (i += 1) {}
+                ent[0].comment = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (i + 1))));
                 var j: usize = 0;
-                while (j < i) : (j += 1) ent[0].comment[j] = c.scopy(com[0].desc[j]);
+                while (j < i) : (j += 1) ent[0].comment[j] = scopy(com.?.desc[j]);
                 ent[0].comment[i] = null;
             }
         }
@@ -214,15 +226,15 @@ fn fprune(
         }
 
         if (flag.condense_singletons) {
-            while (c.is_singleton(@ptrCast(ent))) {
+            while (is_singleton(@ptrCast(ent))) {
                 const child = ent[0].child;
                 var segs = [_][*c]const u8{ ent[0].name, child[0][0].name };
-                const name = c.pathconcat(@ptrCast(&segs), 2);
+                const name = pathconcat(@ptrCast(&segs), 2);
                 std.c.free(ent[0].name);
-                ent[0].name = c.scopy(name);
+                ent[0].name = scopy(name);
                 ent[0].child = child[0][0].child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0][0].condensed;
-                c.free_dir(@ptrCast(child));
+                free_dir(@ptrCast(child));
             }
         }
 
@@ -232,7 +244,7 @@ fn fprune(
         }
         matched = defmatched;
 
-        const t: [*c]c.struct__info = ent;
+        const t: [*c]types.Info = ent;
         ent = ent[0].next;
         if (show) {
             if (end != null) {
@@ -251,9 +263,9 @@ fn fprune(
     if (end != null) end[0].next = null;
 
     if (count > 0) {
-        const arr: [*c][*c]c.struct__info = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]c.struct__info) * (count + 1))));
+        const arr: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * (count + 1))));
         var i: usize = 0;
-        var e: [*c]c.struct__info = new_head;
+        var e: [*c]types.Info = new_head;
         while (e != null) : (i += 1) {
             arr[i] = e;
             e = e[0].next;
@@ -262,13 +274,13 @@ fn fprune(
 
         if (topsort != null and count > 1) {
             const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-            c.qsort(@ptrCast(arr), count, @sizeOf([*c]c.struct__info), cmp);
+            c.qsort(@ptrCast(arr), count, @sizeOf([*c]types.Info), cmp);
         }
         dir = arr;
     }
 
-    if (ig != null) ig = c.flush_filterstack();
-    if (inf != null) inf = c.pop_infostack();
+    if (ig != null) ig = @ptrCast(flush_filterstack());
+    if (inf != null) inf = @ptrCast(pop_infostack());
 
     return dir;
 }
@@ -277,9 +289,9 @@ export fn file_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
-    size: *c.off_t,
+    size: [*c]c.off_t,
     err: [*c][*c]u8,
-) [*c][*c]c.struct__info {
+) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -293,8 +305,8 @@ export fn file_getfulltree(
         return null;
     }
 
-    var root: [*c]c.struct__info = null;
-    const path: [*c]u8 = @ptrCast(@alignCast(c.xmalloc(MAXPATH)));
+    var root: [*c]types.Info = null;
+    const path: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
     defer std.c.free(path);
 
     while (c.fgets(path, MAXPATH, fp) != null) {
@@ -309,13 +321,13 @@ export fn file_getfulltree(
         if (l == 0) continue;
 
         var spath: [*c]u8 = path;
-        var cwd_ptr: *[*c]c.struct__info = &root;
+        var cwd_ptr: *[*c]types.Info = &root;
 
         const link: [*c]u8 = if (flag.fflinks) c.strstr(path, " -> ") else null;
         if (link != null) link[0] = 0;
 
         var tok: c_int = 0;
-        var ent: [*c]c.struct__info = null;
+        var ent: [*c]types.Info = null;
         while (true) {
             const s = nextpc(&spath, &tok);
             const ftok: Ftok = @enumFromInt(tok);
@@ -331,9 +343,9 @@ export fn file_getfulltree(
                     // Might be empty, but should definitely be considered a directory:
                     if (ftok == .T_DIR) {
                         ent[0].isdir = true;
-                        ent[0].mode = c.S_IFDIR;
+                        ent[0].mode = @intCast(c.S_IFDIR);
                     } else {
-                        ent[0].mode = c.S_IFREG;
+                        ent[0].mode = @intCast(c.S_IFREG);
                     }
                     cwd_ptr = &(ent[0].tchild);
                 },
@@ -344,8 +356,8 @@ export fn file_getfulltree(
 
         if (ent != null and link != null) {
             ent[0].isdir = false;
-            ent[0].mode = c.S_IFLNK;
-            ent[0].lnk = c.scopy(link + 4);
+            ent[0].mode = @intCast(c.S_IFLNK);
+            ent[0].lnk = scopy(link + 4);
         }
     }
 
@@ -359,9 +371,9 @@ export fn tabedfile_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
-    size: *c.off_t,
+    size: [*c]c.off_t,
     err: [*c][*c]u8,
-) [*c][*c]c.struct__info {
+) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -375,13 +387,13 @@ export fn tabedfile_getfulltree(
         return null;
     }
 
-    var root: [*c]c.struct__info = null;
+    var root: [*c]types.Info = null;
     const maxstack: usize = 2048;
-    const path: [*c]u8 = @ptrCast(@alignCast(c.xmalloc(MAXPATH)));
+    const path: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
     defer std.c.free(path);
-    const istack: [*c][*c]c.struct__info = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]c.struct__info) * maxstack)));
+    const istack: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * maxstack)));
     defer std.c.free(@ptrCast(istack));
-    @memset(@as([*]u8, @ptrCast(istack))[0 .. @sizeOf([*c]c.struct__info) * maxstack], 0);
+    @memset(@as([*]u8, @ptrCast(istack))[0 .. @sizeOf([*c]types.Info) * maxstack], 0);
 
     var line: usize = 0;
     var top: usize = 0;
@@ -421,20 +433,20 @@ export fn tabedfile_getfulltree(
             continue;
         }
 
-        const dir_ptr: *[*c]c.struct__info = if (tabs != 0) &(istack[tabs - 1][0].tchild) else &root;
-        const ent: [*c]c.struct__info = search(dir_ptr, spath);
+        const dir_ptr: *[*c]types.Info = if (tabs != 0) &(istack[tabs - 1][0].tchild) else &root;
+        const ent: [*c]types.Info = search(dir_ptr, spath);
         istack[tabs] = ent;
-        ent[0].mode = c.S_IFREG;
+        ent[0].mode = @intCast(c.S_IFREG);
 
         if (tabs > 0) {
             istack[tabs - 1][0].isdir = true;
-            istack[tabs - 1][0].mode = c.S_IFDIR;
+            istack[tabs - 1][0].mode = @intCast(c.S_IFDIR);
         }
 
         if (link != null) {
             ent[0].isdir = false;
-            ent[0].mode = c.S_IFLNK;
-            ent[0].lnk = c.scopy(link + 4);
+            ent[0].mode = @intCast(c.S_IFLNK);
+            ent[0].lnk = scopy(link + 4);
         }
         top = tabs;
     }

@@ -5,6 +5,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
+
 fn srcStartsWith(s: [*:0]const u8, needle: []const u8) bool {
     if (needle.len == 0) return false;
     for (needle, 0..) |b, i| {
@@ -76,7 +78,7 @@ export fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
 }
 
 /// Returns true if dir has exactly one child that is itself a directory.
-export fn is_singleton(dir: *c.struct__info) bool {
+export fn is_singleton(dir: *types.Info) bool {
     const child = dir.child;
     if (child == null) return false;
     if (child[0] == null) return false;

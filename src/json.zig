@@ -18,7 +18,9 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
+const types = @import("types.zig");
+
+extern var flag: types.Flags;
 extern var outfile: ?*c.FILE;
 extern var _nl: [*c]const u8;
 
@@ -29,7 +31,7 @@ const ftype = @extern([*]const [*c]const u8, .{ .name = "ftype" });
 extern fn uidtoname(uid: c.uid_t) [*c]const u8;
 extern fn gidtoname(gid: c.gid_t) [*c]const u8;
 
-// Still in C (file.c); port later.
+// Still in tree.zig
 extern fn prot(mode: c.mode_t) [*c]u8;
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
 extern fn do_date(t: c.time_t) [*c]u8;
@@ -70,7 +72,7 @@ export fn json_indent(maxlevel: c_int) void {
     }
 }
 
-export fn json_fillinfo(ent: *c.struct__info) void {
+export fn json_fillinfo(ent: *types.Info) void {
     const out = outfile.?;
 
     if (flag.inode) {
@@ -84,14 +86,14 @@ export fn json_fillinfo(ent: *c.struct__info) void {
     if (flag.dev) _ = c.fprintf(out, ",\"dev\":%d", @as(c_int, @intCast(ent.dev)));
     if (flag.p) {
         const mask: c.mode_t = c.S_IRWXU | c.S_IRWXG | c.S_IRWXO | c.S_ISUID | c.S_ISGID | c.S_ISVTX;
-        _ = c.fprintf(out, ",\"mode\":\"%04o\",\"prot\":\"%s\"", @as(c_uint, @intCast(ent.mode & mask)), prot(ent.mode));
+        _ = c.fprintf(out, ",\"mode\":\"%04o\",\"prot\":\"%s\"", @as(c_uint, @intCast(ent.mode & @as(@TypeOf(ent.mode), @intCast(mask)))), prot(@intCast(ent.mode)));
     }
-    if (flag.u) _ = c.fprintf(out, ",\"user\":\"%s\"", uidtoname(ent.uid));
-    if (flag.g) _ = c.fprintf(out, ",\"group\":\"%s\"", gidtoname(ent.gid));
+    if (flag.u) _ = c.fprintf(out, ",\"user\":\"%s\"", uidtoname(@intCast(ent.uid)));
+    if (flag.g) _ = c.fprintf(out, ",\"group\":\"%s\"", gidtoname(@intCast(ent.gid)));
     if (flag.s) {
         if (flag.h or flag.si) {
             var nbuf: [64]u8 = undefined;
-            _ = psize(&nbuf, ent.size);
+            _ = psize(&nbuf, @intCast(ent.size));
             var i: usize = 0;
             while (c.isspace(@as(c_int, nbuf[i])) != 0) : (i += 1) {}
             _ = c.fprintf(out, ",\"size\":\"%s\"", @as([*c]const u8, @ptrCast(&nbuf[i])));
@@ -99,7 +101,7 @@ export fn json_fillinfo(ent: *c.struct__info) void {
             _ = c.fprintf(out, ",\"size\":%lld", @as(c_longlong, @intCast(ent.size)));
         }
     }
-    if (flag.D) _ = c.fprintf(out, ",\"time\":\"%s\"", do_date(if (flag.c) ent.ctime else ent.mtime));
+    if (flag.D) _ = c.fprintf(out, ",\"time\":\"%s\"", do_date(@intCast(if (flag.c) ent.ctime else ent.mtime)));
 }
 
 export fn json_intro() void {
@@ -110,12 +112,12 @@ export fn json_outtro() void {
     _ = c.fprintf(outfile.?, "%s]\n", if (flag.noindent) @as([*c]const u8, "") else _nl);
 }
 
-export fn json_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) c_int {
+export fn json_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     if (!flag.noindent) json_indent(level);
 
-    const mt: c.mode_t = if (file) |f| @intCast(f.mode & c.S_IFMT) else 0;
+    const mt: c.mode_t = if (file) |f| @intCast(f.mode & @as(@TypeOf(f.mode), @intCast(c.S_IFMT))) else 0;
 
     var t: usize = 0;
     while (ifmt[t] != 0) : (t += 1) {
@@ -126,7 +128,7 @@ export fn json_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) 
     return 0;
 }
 
-export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__info, descend: c_int) c_int {
+export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     _ = dirname;
     const out = outfile.?;
     var direrr = false;
@@ -169,14 +171,14 @@ export fn json_error(err: [*c]u8) c_int {
     return 0;
 }
 
-export fn json_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, needcomma: c_int) void {
+export fn json_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = file;
     _ = level;
     _ = postdir;
     _ = c.fprintf(outfile.?, "%s%s", if (needcomma != 0) @as([*c]const u8, ",") else @as([*c]const u8, ""), _nl);
 }
 
-export fn json_close(file: ?*c.struct__info, level: c_int, needcomma: c_int) void {
+export fn json_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = file;
     if (!flag.noindent) json_indent(level);
     _ = c.fprintf(
@@ -187,7 +189,7 @@ export fn json_close(file: ?*c.struct__info, level: c_int, needcomma: c_int) voi
     );
 }
 
-export fn json_report(tot: c.struct_totals) void {
+export fn json_report(tot: types.Totals) void {
     const out = outfile.?;
     _ = c.fputc(',', out);
     json_indent(0);

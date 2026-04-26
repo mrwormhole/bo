@@ -6,26 +6,39 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
+const types = @import("types.zig");
+
+extern var flag: types.Flags;
 extern var outfile: ?*c.FILE;
 extern var dirs: [*c]c_int;
 
 extern var scheme: [*c]u8;
 extern var authority: [*c]u8;
 
+extern fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8;
+extern fn indent(maxlevel: c_int) void;
+extern fn url_encode(fd: *c.FILE, s: [*c]u8) bool;
+extern fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void;
+extern fn color(mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool;
+extern fn endcolor() void;
+extern fn printit(s: [*c]const u8) void;
+extern fn Ftype(mode: c.mode_t) u8;
+extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
+extern fn printcomment(line: usize, lines: usize, s: [*c]u8) void;
+
 // Persists across calls: written by unix_printinfo, re-read by unix_newline
 // when computing metafirst comment indentation.
 var info_buf: [512]u8 = std.mem.zeroes([512]u8);
 
-export fn unix_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) c_int {
+export fn unix_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
-    _ = c.fillinfo(&info_buf, file);
+    _ = fillinfo(&info_buf, file);
     if (flag.metafirst) {
         if (info_buf[0] == '[') _ = c.fprintf(outfile, "%s  ", &info_buf);
-        if (!flag.noindent) c.indent(level);
+        if (!flag.noindent) indent(level);
     } else {
-        if (!flag.noindent) c.indent(level);
+        if (!flag.noindent) indent(level);
         if (info_buf[0] == '[') _ = c.fprintf(outfile, "%s  ", &info_buf);
     }
     return 0;
@@ -34,10 +47,10 @@ export fn unix_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) 
 fn open_hyperlink(dirname: [*c]u8, filename: [*c]u8) void {
     const out = outfile.?;
     _ = c.fprintf(out, "\x1b]8;;%s", scheme);
-    _ = c.url_encode(out, authority);
+    _ = url_encode(out, authority);
     _ = c.fprintf(out, ":");
-    c.emit_hyperlink_path(out, dirname);
-    _ = c.url_encode(out, filename);
+    emit_hyperlink_path(out, dirname);
+    _ = url_encode(out, filename);
     _ = c.fprintf(out, "\x1b\\");
 }
 
@@ -45,7 +58,7 @@ fn close_hyperlink() void {
     _ = c.fprintf(outfile, "\x1b]8;;\x1b\\");
 }
 
-export fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__info, descend: c_int) c_int {
+export fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     _ = descend;
 
     var colored: bool = false;
@@ -55,33 +68,33 @@ export fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__in
 
         if (flag.colorize) {
             if (f.lnk != null and flag.linktargetcolor) {
-                colored = c.color(f.lnkmode, f.name, f.orphan, false);
+                colored = color(@intCast(f.lnkmode), f.name, f.orphan, false);
             } else {
-                colored = c.color(f.mode, f.name, f.orphan, false);
+                colored = color(@intCast(f.mode), f.name, f.orphan, false);
             }
         }
     }
 
-    c.printit(filename);
-    if (colored) c.endcolor();
+    printit(filename);
+    if (colored) endcolor();
 
     if (file) |f| {
         if (flag.hyper) close_hyperlink();
 
         if (flag.F and f.lnk == null) {
-            const ch = c.Ftype(f.mode);
+            const ch = Ftype(@intCast(f.mode));
             if (ch != 0) _ = c.fputc(ch, outfile);
         }
 
         if (f.lnk != null) {
             _ = c.fprintf(outfile, " -> ");
             if (flag.hyper) open_hyperlink(dirname, f.name);
-            if (flag.colorize) colored = c.color(f.lnkmode, f.lnk, f.orphan, true);
-            c.printit(f.lnk);
-            if (colored) c.endcolor();
+            if (flag.colorize) colored = color(@intCast(f.lnkmode), f.lnk, f.orphan, true);
+            printit(f.lnk);
+            if (colored) endcolor();
             if (flag.hyper) close_hyperlink();
             if (flag.F) {
-                const ch = c.Ftype(f.lnkmode);
+                const ch = Ftype(@intCast(f.lnkmode));
                 if (ch != 0) _ = c.fputc(ch, outfile);
             }
         }
@@ -94,7 +107,7 @@ export fn unix_error(err: [*c]u8) c_int {
     return 0;
 }
 
-export fn unix_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, needcomma: c_int) void {
+export fn unix_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = needcomma;
 
     if (postdir <= 0) _ = c.fprintf(outfile, "\n");
@@ -114,19 +127,19 @@ export fn unix_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, nee
             if (flag.metafirst) {
                 _ = c.printf("%*s", @as(c_int, @intCast(infosize)), "");
             }
-            c.indent(level);
-            c.printcomment(line, lines, f.comment[line]);
+            indent(level);
+            printcomment(line, lines, f.comment[line]);
         }
         dirs[@intCast(level + 1)] = 0;
     }
 }
 
-export fn unix_report(tot: c.struct_totals) void {
+export fn unix_report(tot: types.Totals) void {
     var buf: [256]u8 = undefined;
 
     _ = c.fputc('\n', outfile);
     if (flag.du) {
-        _ = c.psize(&buf, tot.size);
+        _ = psize(&buf, @intCast(tot.size));
         const suffix: [*c]const u8 = if (flag.h or flag.si) "" else " bytes";
         _ = c.fprintf(outfile, "%s%s used in ", &buf, suffix);
     }

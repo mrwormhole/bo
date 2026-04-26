@@ -6,9 +6,15 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
+const types = @import("types.zig");
+
+extern var flag: types.Flags;
 extern var outfile: ?*c.FILE;
 extern var charset: [*c]const u8;
+
+extern fn xmalloc(size: usize) *anyopaque;
+extern fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque;
+extern fn scopy(s: [*c]const u8) [*c]u8;
 
 // Enum values from the original color.c
 const ERROR = -1;
@@ -44,7 +50,7 @@ const DOT_EXTENSION = 27;
 
 // Module-private globals
 var color_code: [DOT_EXTENSION + 1][*c]u8 = @splat(null);
-var ext: ?*c.struct_extensions = null;
+var ext: ?*types.Extensions = null;
 
 // Default charset array - moved to module level so it can initialize linedraw
 const ansi: [2][*c]const u8 = .{ "ANSI", null };
@@ -64,7 +70,7 @@ const viscii: [3][*c]const u8 = .{ "VISCII", "csVISCII", null };
 const koi8ru: [4][*c]const u8 = .{ "KOI8-R", "csKOI8R", "KOI8-U", null };
 const windows: [13][*c]const u8 = .{ "ISO-8859-1-Windows-3.1-Latin-1", "csWindows31Latin1", "ISO-8859-2-Windows-Latin-2", "csWindows31Latin2", "windows-1250", "windows-1251", "windows-1253", "windows-1254", "windows-1255", "windows-1256", "windows-1256", "windows-1257", null };
 
-const cstable = [_]c.struct_linedraw{
+const cstable = [_]types.LineDraw{
     .{
         .name = @as([*c][*c]const u8, @ptrCast(@constCast(&ansi))),
         .vert = .{ "\x1B(0x  \x1B(B", "\x1B(0x \x1B(B", "\x1B(0x\x1B(B" },
@@ -255,7 +261,7 @@ const cstable = [_]c.struct_linedraw{
 };
 
 // Exported for use by tree.c and info.zig (mutable, set by initlinedraw)
-export var linedraw: [*c]const c.struct_linedraw = null;
+export var linedraw: [*c]const types.LineDraw = null;
 
 // On macOS/FreeBSD stderr is an inline function; on Linux it's a plain pointer.
 inline fn cStderr() ?*c.FILE {
@@ -266,37 +272,10 @@ inline fn cStderr() ?*c.FILE {
 }
 
 // Hacked in DIR_COLORS support for linux. ------------------------------
-//
-//  If someone asked me, I'd extend dircolors, to provide more generic
-// color support so that more programs could take advantage of it.  This
-// is really just hacked in support.  The dircolors program should:
-// 1) Put the valid terms in a environment var, like:
-//    COLOR_TERMS=linux:console:xterm:vt100...
-// 2) Put the COLOR and OPTIONS directives in a env var too.
-// 3) Have an option to dircolors to silently ignore directives that it
-//    doesn't understand (directives that other programs would
-//    understand).
-// 4) Perhaps even make those unknown directives environment variables.
-//
-// The environment is the place for cryptic crap no one looks at, but
-// programs.  No one is going to care if it takes 30 variables to do
-// something.
 
-//
-// char *vgacolor[] = {
-//   "black", "red", "green", "yellow", "blue", "fuchsia", "aqua", "white",
-//   NULL, NULL,
-//   "transparent", "red", "green", "yellow", "blue", "fuchsia", "aqua", "black"
-// };
-// struct colortable {
-//   char *term_flg, *CSS_name, *font_fg, *font_bg;
-// } colortable[11];
-
-// You must free the pointer that is allocated by split() after you
-// are done using the array.
 fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     var n: usize = 128;
-    var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * n))));
+    var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * n))));
 
     nwrds.* = 0;
     w[0] = c.strtok(str, delim);
@@ -304,7 +283,7 @@ fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     while (w[nwrds.*] != null) {
         if (nwrds.* == (n - 2)) {
             n += 256;
-            w = @as([*c][*c]u8, @ptrCast(@alignCast(c.xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
+            w = @as([*c][*c]u8, @ptrCast(@alignCast(xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
         }
         nwrds.* += 1;
         w[nwrds.*] = c.strtok(null, delim);
@@ -357,7 +336,7 @@ export fn parse_dir_colors() void {
     var col: c_int = 0;
     var cc: c_int = 0;
     var n: usize = 0;
-    var e: ?*c.struct_extensions = undefined;
+    var e: ?*types.Extensions = undefined;
 
     if (flag.H) return;
 
@@ -389,7 +368,7 @@ export fn parse_dir_colors() void {
         color_code[@as(usize, @intCast(i))] = null;
     }
 
-    colors = c.scopy(s);
+    colors = scopy(s);
 
     arg = split(colors, ":", &n);
 
@@ -402,10 +381,10 @@ export fn parse_dir_colors() void {
             ERROR => {},
             DOT_EXTENSION => {
                 if (c_ptr[1] != null) {
-                    e = @as(?*c.struct_extensions, @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_extensions)))));
+                    e = @as(?*types.Extensions, @ptrCast(@alignCast(xmalloc(@sizeOf(types.Extensions)))));
                     if (e) |e_val| {
-                        e_val.ext = c.scopy(c_ptr[0] + 1);
-                        e_val.term_flg = c.scopy(c_ptr[1]);
+                        e_val.ext = scopy(c_ptr[0] + 1);
+                        e_val.term_flg = scopy(c_ptr[1]);
                         e_val.nxt = ext;
                         ext = e_val;
                     }
@@ -417,11 +396,11 @@ export fn parse_dir_colors() void {
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
                     // Falls through (matches C default case below)
-                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = c.scopy(c_ptr[1]);
+                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = scopy(c_ptr[1]);
                 }
             },
             else => {
-                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = c.scopy(c_ptr[1]);
+                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = scopy(c_ptr[1]);
             },
         }
 
@@ -431,31 +410,31 @@ export fn parse_dir_colors() void {
 
     // Make sure at least reset (not normal) is defined. We're going to assume ANSI/vt100 support:
     if (color_code[@as(usize, @intCast(COL_LEFTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_LEFTCODE))] = c.scopy("\x1B[");
+        color_code[@as(usize, @intCast(COL_LEFTCODE))] = scopy("\x1B[");
     }
     if (color_code[@as(usize, @intCast(COL_RIGHTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = c.scopy("m");
+        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = scopy("m");
     }
     if (color_code[@as(usize, @intCast(COL_RESET))] == null) {
-        color_code[@as(usize, @intCast(COL_RESET))] = c.scopy("0");
+        color_code[@as(usize, @intCast(COL_RESET))] = scopy("0");
     }
     if (color_code[@as(usize, @intCast(COL_BOLD))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(c.xmalloc(lcode_len + rcode_len + 2))));
+        color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_BOLD))], "%s1%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ITALIC))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(c.xmalloc(lcode_len + rcode_len + 2))));
+        color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ITALIC))], "%s3%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ENDCODE))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const reset_len = c.strlen(color_code[@as(usize, @intCast(COL_RESET))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(c.xmalloc(lcode_len + reset_len + rcode_len + 1))));
+        color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + reset_len + rcode_len + 1))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ENDCODE))], "%s%s%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RESET))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
 
@@ -500,7 +479,7 @@ export fn fancy(out: ?*c.FILE, s_in: [*c]u8) void {
 }
 
 export fn color(mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool {
-    var e: ?*c.struct_extensions = ext;
+    var e: ?*types.Extensions = ext;
     var l: usize = 0;
     var xl: usize = 0;
 
