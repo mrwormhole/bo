@@ -6,11 +6,15 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
 const pat = @import("pattern.zig");
+
+extern fn xmalloc(size: usize) *anyopaque;
+extern fn scopy(s: [*c]const u8) [*c]u8;
 
 extern var xpattern: [c.PATH_MAX]u8;
 
-var filterstack: ?*c.struct_ignorefile = null;
+var filterstack: ?*types.IgnoreFile = null;
 
 fn is_file(path: [*c]const u8) bool {
     const path_slice = std.mem.span(path);
@@ -47,10 +51,10 @@ export fn gittrim(s: [*c]u8) void {
     s[re] = 0;
 }
 
-export fn new_pattern(pattern: [*c]u8) *c.struct_pattern {
-    const p: *c.struct_pattern = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_pattern))));
+export fn new_pattern(pattern: [*c]u8) *types.Pattern {
+    const p: *types.Pattern = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Pattern))));
     const offset: usize = if (pattern[0] == '/') 1 else 0;
-    p.pattern = c.scopy(pattern + offset);
+    p.pattern = scopy(pattern + offset);
     const sl = c.strchr(pattern, '/');
     p.relative = @intFromBool(sl == null or sl[1] == 0);
     p.next = null;
@@ -61,9 +65,9 @@ export fn new_pattern(pattern: [*c]u8) *c.struct_pattern {
 /// that contains a .git directory, or at /, whichever occurs first. The depth
 /// parameter is just a sanity check to insure we can't get into a loop somehow,
 /// even though that should be impossible.
-export fn gitignore_search(startpath: [*c]const u8, depth: c_int) ?*c.struct_ignorefile {
-    var pign: ?*c.struct_ignorefile = null;
-    var ign: ?*c.struct_ignorefile = null;
+export fn gitignore_search(startpath: [*c]const u8, depth: c_int) ?*types.IgnoreFile {
+    var pign: ?*types.IgnoreFile = null;
+    var ign: ?*types.IgnoreFile = null;
     var path: [c.PATH_MAX + 1]u8 = undefined;
 
     // strcpy(rpath, startpath);
@@ -96,13 +100,13 @@ export fn gitignore_search(startpath: [*c]const u8, depth: c_int) ?*c.struct_ign
     return if (ign == null) pign else ign;
 }
 
-export fn new_ignorefile(basepath: [*c]const u8, path: [*c]const u8, checkparents: bool) ?*c.struct_ignorefile {
+export fn new_ignorefile(basepath: [*c]const u8, path: [*c]const u8, checkparents: bool) ?*types.IgnoreFile {
     var buf: [c.PATH_MAX]u8 = undefined;
     var fp: ?*c.FILE = null;
-    var remove_head: ?*c.struct_pattern = null;
-    var remove_end: ?*c.struct_pattern = null;
-    var reverse_head: ?*c.struct_pattern = null;
-    var reverse_end: ?*c.struct_pattern = null;
+    var remove_head: ?*types.Pattern = null;
+    var remove_end: ?*types.Pattern = null;
+    var reverse_head: ?*types.Pattern = null;
+    var reverse_end: ?*types.Pattern = null;
 
     if (!is_file(path)) {
         _ = c.snprintf(&buf, c.PATH_MAX, "%s/.gitignore", path);
@@ -148,28 +152,28 @@ export fn new_ignorefile(basepath: [*c]const u8, path: [*c]const u8, checkparent
 
     _ = c.fclose(fp);
 
-    const ig: *c.struct_ignorefile = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_ignorefile))));
+    const ig: *types.IgnoreFile = @ptrCast(@alignCast(xmalloc(@sizeOf(types.IgnoreFile))));
     ig.remove = remove_head;
     ig.reverse = reverse_head;
-    ig.path = c.scopy(basepath);
+    ig.path = scopy(basepath);
     ig.next = null;
 
     return ig;
 }
 
-export fn push_filterstack(ig: ?*c.struct_ignorefile) void {
+export fn push_filterstack(ig: ?*types.IgnoreFile) void {
     if (ig == null) return;
     ig.?.next = filterstack;
     filterstack = ig;
 }
 
-export fn pop_filterstack() ?*c.struct_ignorefile {
+export fn pop_filterstack() ?*types.IgnoreFile {
     const ig = filterstack orelse return null;
     filterstack = ig.next;
 
     // Note: original C frees pattern->pattern (the string) but never the
     // pattern struct nodes themselves — preserved verbatim.
-    var pp: ?*c.struct_pattern = ig.remove;
+    var pp: ?*types.Pattern = ig.remove;
     while (pp != null) {
         const cur = pp.?;
         pp = cur.next;
@@ -186,7 +190,7 @@ export fn pop_filterstack() ?*c.struct_ignorefile {
     return null;
 }
 
-export fn flush_filterstack() ?*c.struct_ignorefile {
+export fn flush_filterstack() ?*types.IgnoreFile {
     while (filterstack != null) _ = pop_filterstack();
     return null;
 }
@@ -198,12 +202,12 @@ export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, igno
 
     // printf("Checking [%s / %s %d]\n", path, name, isdir);
 
-    var ig: ?*c.struct_ignorefile = filterstack;
+    var ig: ?*types.IgnoreFile = filterstack;
     while (!filter and ig != null) : (ig = ig.?.next) {
         const cur_ig = ig.?;
         const fpos: usize = @intCast(c.sprintf(&xpattern, "%s/", cur_ig.path));
 
-        var p: ?*c.struct_pattern = cur_ig.remove;
+        var p: ?*types.Pattern = cur_ig.remove;
         while (p != null) : (p = p.?.next) {
             const cp = p.?;
             if (cp.relative != 0) {
@@ -229,7 +233,7 @@ export fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, igno
         const cur_ig = ig.?;
         const fpos: usize = @intCast(c.sprintf(&xpattern, "%s/", cur_ig.path));
 
-        var p: ?*c.struct_pattern = cur_ig.reverse;
+        var p: ?*types.Pattern = cur_ig.reverse;
         while (p != null) : (p = p.?.next) {
             const cp = p.?;
             if (cp.relative != 0) {

@@ -7,16 +7,17 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
 const stat = @import("stat.zig");
 
-var lstat_info: c.struct__info = std.mem.zeroes(c.struct__info);
+var lstat_info: types.Info = std.mem.zeroes(types.Info);
 
-fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
-    lstat_info = std.mem.zeroes(c.struct__info);
+fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
+    lstat_info = std.mem.zeroes(types.Info);
     if (builtin.os.tag == .linux) {
         var st: std.os.linux.Stat = undefined;
         if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
-        c.saveino(@intCast(st.ino), @intCast(st.dev));
+        saveino(@intCast(st.ino), @intCast(st.dev));
         dev_out.* = @intCast(st.dev);
         lstat_info.linode = @intCast(st.ino);
         lstat_info.ldev = @intCast(st.dev);
@@ -30,11 +31,11 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
     } else {
         var st: c.struct_stat = undefined;
         if (c.lstat(path, &st) < 0) return null;
-        c.saveino(st.st_ino, st.st_dev);
+        saveino(st.st_ino, st.st_dev);
         dev_out.* = st.st_dev;
         lstat_info.linode = st.st_ino;
         lstat_info.ldev = st.st_dev;
-        lstat_info.mode = st.st_mode;
+        lstat_info.mode = @intCast(st.st_mode);
         lstat_info.uid = st.st_uid;
         lstat_info.gid = st.st_gid;
         lstat_info.size = st.st_size;
@@ -60,9 +61,9 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]c.struct__info {
     return &lstat_info;
 }
 
-extern var flag: c.struct_Flags;
-extern var getfulltree: ?*const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]c.struct__info;
-extern var topsort: ?*const fn ([*c][*c]c.struct__info, [*c][*c]c.struct__info) callconv(.c) c_int;
+extern var flag: types.Flags;
+extern var getfulltree: ?*const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
+extern var topsort: ?*const fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
 extern var outfile: ?*c.FILE;
 extern var dirs: [*c]c_int;
@@ -70,17 +71,32 @@ extern var errors: c_int;
 extern var Level: isize;
 extern var htmldirlen: usize;
 
+extern fn saveino(ino: c.ino_t, dev: c.dev_t) void;
+extern fn findino(ino: c.ino_t, dev: c.dev_t) bool;
+extern fn url_encode(fd: *c.FILE, s: [*c]u8) bool;
+extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
+extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info;
+extern fn free_dir(d: [*c][*c]types.Info) void;
+extern fn flush_filterstack() ?*types.IgnoreFile;
+extern fn pop_filterstack() ?*types.IgnoreFile;
+extern fn pop_infostack() ?*types.InfoFile;
+extern fn xmalloc(size: usize) *anyopaque;
+extern fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque;
+extern fn setoutput(filename: [*c]const u8) void;
+
+extern var lc: types.ListingCalls;
+
 var errbuf: [256]u8 = undefined;
 var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
 var dirpathoffset: usize = 0;
 
 export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
     // (optional) Hanging slashes are a real pain to deal with
-    var slash = c.url_encode(out, &realbasepath);
+    var slash = url_encode(out.?, &realbasepath);
     if (dirname[dirpathoffset] != 0) {
         slash = slash or (dirname[dirpathoffset] == '/');
         if (!slash) _ = c.fputc('/', out);
-        if (!c.url_encode(out, dirname + dirpathoffset)) _ = c.fputc('/', out);
+        if (!url_encode(out.?, dirname + dirpathoffset)) _ = c.fputc('/', out);
     } else if (!slash) {
         _ = c.fputc('/', out);
     }
@@ -89,20 +105,19 @@ export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
 //  TODO: Refactor the listing calls / when they are called.  A more thorough
 //  analysis of the different outputs is required.  This all is not as clean as I
 //  had hoped it to be.
-extern var lc: c.struct_listingcalls;
 
 export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
-    var tot = c.struct_totals{ .files = 0, .dirs = 0, .size = 0 };
-    var ig: ?*c.struct_ignorefile = null;
-    var inf: ?*c.struct_infofile = null;
+    var tot = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
+    var ig: ?*types.IgnoreFile = null;
+    var inf: ?*types.InfoFile = null;
     var err: [*c]u8 = null;
 
     lc.intro.?();
 
     var i: usize = 0;
     while (dirname[i] != null) : (i += 1) {
-        var dir: [*c][*c]c.struct__info = null;
-        var info: [*c]c.struct__info = null;
+        var dir: [*c][*c]types.Info = null;
+        var info: [*c]types.Info = null;
 
         if (flag.hyper) {
             if (c.realpath(dirname[i], &realbasepath) == null) {
@@ -133,8 +148,8 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
                 dir = getfulltree.?(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
             } else {
-                c.push_files(dirname[i], &ig, &inf, true);
-                dir = c.read_dir(dirname[i], &n, @intFromBool(inf != null));
+                push_files(dirname[i], &ig, &inf, true);
+                dir = read_dir(dirname[i], &n, @intFromBool(inf != null));
             }
         } else {
             info = null;
@@ -143,7 +158,7 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
 
         const printfile_arg: c_int = @intFromBool(dir != null or n != 0);
         const needsclosed = lc.printfile.?(dirname[i], dirname[i], info, printfile_arg);
-        var subtotal = c.struct_totals{ .files = 0, .dirs = 0, .size = 0 };
+        var subtotal = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
 
         if (dir == null and n != 0) {
             _ = lc.@"error".?(@constCast("error opening dir"));
@@ -162,7 +177,7 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
             }
         }
         if (dir != null) {
-            c.free_dir(dir);
+            free_dir(dir);
             dir = null;
         }
         if (needsclosed != 0) lc.close.?(info, 0, @intFromBool(dirname[i + 1] != null));
@@ -173,8 +188,8 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
         // This is already done in getfulltree()
         if (flag.du) tot.size += if (info != null) info.*.size else 0;
 
-        if (ig != null) ig = c.flush_filterstack();
-        if (inf != null) inf = c.pop_infostack();
+        if (ig != null) ig = flush_filterstack();
+        if (inf != null) inf = pop_infostack();
     }
 
     if (!flag.noreport) lc.report.?(tot);
@@ -184,16 +199,16 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
 
 export fn listdir(
     dirname: [*c]u8,
-    dir_in: [*c][*c]c.struct__info,
+    dir_in: [*c][*c]types.Info,
     lev: c_int,
     dev: c.dev_t,
     hasfulltree: bool,
-) c.struct_totals {
-    var tot = c.struct_totals{ .files = 0, .dirs = 0, .size = 0 };
-    var subtotal: c.struct_totals = undefined;
-    var ig: ?*c.struct_ignorefile = null;
-    var inf: ?*c.struct_infofile = null;
-    var subdir: [*c][*c]c.struct__info = null;
+) types.Totals {
+    var tot = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
+    var subtotal: types.Totals = undefined;
+    var ig: ?*types.IgnoreFile = null;
+    var inf: ?*types.InfoFile = null;
+    var subdir: [*c][*c]types.Info = null;
     var namemax: usize = 257;
     var htmldescend: c_int = 0;
     var n: isize = undefined;
@@ -211,13 +226,13 @@ export fn listdir(
     while (dir_in[@as(usize, @intCast(n))] != null) : (n += 1) {}
     if (topsort != null) {
         const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-        c.qsort(@ptrCast(dir_in), @as(usize, @intCast(n)), @sizeOf([*c]c.struct__info), cmp);
+        c.qsort(@ptrCast(dir_in), @as(usize, @intCast(n)), @sizeOf([*c]types.Info), cmp);
     }
 
     var cursor = dir_in;
     dirs[@intCast(lev)] = if (cursor[1] != null) 1 else 2;
 
-    var path: [*c]u8 = @ptrCast(c.xmalloc(@sizeOf(u8) * pathlen));
+    var path: [*c]u8 = @ptrCast(xmalloc(@sizeOf(u8) * pathlen));
 
     while (cursor[0] != null) : (cursor += 1) {
         const entry = cursor[0];
@@ -227,7 +242,7 @@ export fn listdir(
         if (namemax < namelen) {
             namemax = namelen;
             pathlen = dirlen + namemax;
-            path = @ptrCast(c.xrealloc(path, pathlen));
+            path = @ptrCast(xrealloc(path, pathlen));
         }
         if (es) {
             _ = c.sprintf(path, "%s%s", dirname, entry.*.name);
@@ -246,8 +261,8 @@ export fn listdir(
 
             var found: bool = false;
             if (!hasfulltree) {
-                found = c.findino(entry.*.inode, entry.*.dev);
-                if (!found) c.saveino(entry.*.inode, entry.*.dev);
+                found = findino(entry.*.inode, entry.*.dev);
+                if (!found) saveino(entry.*.inode, entry.*.dev);
             }
 
             const xdev_block = flag.xdev and dev != entry.*.dev;
@@ -255,19 +270,6 @@ export fn listdir(
             if (!xdev_block and !link_block) {
                 descend = 1;
 
-                // if ((*dir)->lnk) {
-                //   if (*(*dir)->lnk == '/') newpath = (*dir)->lnk;
-                //   else {
-                //     if (flag.f && !strcmp(dirname,"/")) sprintf(path,"%s%s",dirname,(*dir)->lnk);
-                //     else sprintf(path,"%s/%s",dirname,(*dir)->lnk);
-                //   }
-                //   if (found) {
-                //     err = "recursive, not followed";
-                //     /* Not actually a problem if we weren't going to descend anyway: */
-                //     if (Level >= 0 && lev > Level) err = NULL;
-                //     descend = -1;
-                //   }
-                // }
                 if (entry.*.lnk != null and found) {
                     err = @constCast("recursive, not followed");
                     // Not actually a problem if we weren't going to descend anyway:
@@ -279,13 +281,13 @@ export fn listdir(
                     if (flag.R) {
                         const outsave = outfile;
                         var paths = [_][*c]u8{ newpath, null };
-                        const output: [*c]u8 = @ptrCast(c.xmalloc(c.strlen(newpath) + 13));
-                        const dirsave: [*c]c_int = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
+                        const output: [*c]u8 = @ptrCast(xmalloc(c.strlen(newpath) + 13));
+                        const dirsave: [*c]c_int = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
 
                         const copy_bytes: usize = @sizeOf(c_int) * @as(usize, @intCast(lev + 1));
                         _ = c.memcpy(dirsave, dirs, copy_bytes);
                         _ = c.sprintf(output, "%s/00Tree.html", newpath);
-                        c.setoutput(output);
+                        setoutput(output);
                         emit_tree(&paths, hasfulltree);
 
                         c.free(output);
@@ -306,8 +308,8 @@ export fn listdir(
                         subdir = entry.*.child;
                         err = entry.*.err;
                     } else {
-                        c.push_files(newpath, &ig, &inf, false);
-                        subdir = c.read_dir(newpath, &n, @intFromBool(inf != null));
+                        push_files(newpath, &ig, &inf, false);
+                        subdir = read_dir(newpath, &n, @intFromBool(inf != null));
                         if (subdir == null and n != 0) {
                             err = @constCast("error opening dir");
                             errors += 1;
@@ -316,7 +318,7 @@ export fn listdir(
                             _ = c.sprintf(&errbuf, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
                             err = &errbuf;
                             errors += 1;
-                            c.free_dir(subdir);
+                            free_dir(subdir);
                             subdir = null;
                         }
                     }
@@ -342,7 +344,7 @@ export fn listdir(
         }
 
         if (subdir != null) {
-            c.free_dir(subdir);
+            free_dir(subdir);
             subdir = null;
         }
         if (needsclosed != 0) {
@@ -352,8 +354,8 @@ export fn listdir(
 
         if (cursor[1] != null and cursor[2] == null) dirs[@intCast(lev)] = 2;
 
-        if (ig != null) ig = c.pop_filterstack();
-        if (inf != null) inf = c.pop_infostack();
+        if (ig != null) ig = pop_filterstack();
+        if (inf != null) inf = pop_infostack();
     }
 
     dirs[@intCast(lev)] = 0;

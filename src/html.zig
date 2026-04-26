@@ -4,7 +4,9 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
+const types = @import("types.zig");
+
+extern var flag: types.Flags;
 
 extern var version: [*c]const u8;
 extern var charset: [*c]const u8;
@@ -17,14 +19,14 @@ extern var Houtro: [*c]const u8;
 
 extern var outfile: ?*c.FILE;
 
-// FIXME: Still in C (file.c / tree.c); port later.
+// Still in tree.zig
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
-extern fn fillinfo(buf: [*c]u8, ent: *const c.struct__info) [*c]u8;
+extern fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8;
 extern fn indent(maxlevel: c_int) void;
 
 export var htmldirlen: usize = 0;
 
-fn classOf(info: *c.struct__info) [*c]const u8 {
+fn classOf(info: *types.Info) [*c]const u8 {
     if (info.isdir) return "DIR";
     if (info.isexe) return "EXEC";
     if (info.isfifo) return "FIFO";
@@ -142,7 +144,7 @@ fn htmlPrint(s_in: [*c]const u8) void {
     _ = c.fprintf(out, "%s%s", sp, sp);
 }
 
-export fn html_printinfo(dirname: [*c]u8, file: *c.struct__info, level: c_int) c_int {
+export fn html_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     var info: [512]u8 = undefined;
@@ -165,7 +167,7 @@ export fn html_printinfo(dirname: [*c]u8, file: *c.struct__info, level: c_int) c
     return 0;
 }
 
-export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__info, descend: c_int) c_int {
+export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     const out = outfile.?;
 
     _ = c.fprintf(out, "<a");
@@ -220,7 +222,7 @@ export fn html_error(err: [*c]u8) c_int {
     return 0;
 }
 
-export fn html_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, needcomma: c_int) void {
+export fn html_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = file;
     _ = level;
     _ = postdir;
@@ -228,20 +230,22 @@ export fn html_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, nee
     _ = c.fprintf(outfile.?, "<br>\n");
 }
 
-export fn html_close(file: *c.struct__info, level: c_int, needcomma: c_int) void {
+export fn html_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = level;
     _ = needcomma;
-    _ = c.fprintf(outfile.?, "</%s><br>\n", file.tag);
+    if (file) |f| {
+        _ = c.fprintf(outfile.?, "</%s><br>\n", f.tag);
+    }
 }
 
-export fn html_report(tot: c.struct_totals) void {
+export fn html_report(tot: types.Totals) void {
     const out = outfile.?;
     var buf: [256]u8 = undefined;
 
     _ = c.fprintf(out, "<br><br><p>\n\n");
 
     if (flag.du) {
-        _ = psize(&buf, tot.size);
+        _ = psize(&buf, @intCast(tot.size));
         const unit: [*c]const u8 = if (flag.h or flag.si) "" else " bytes";
         _ = c.fprintf(out, "%s%s used in ", @as([*c]const u8, &buf), unit);
     }

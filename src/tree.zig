@@ -9,28 +9,108 @@ const c = @cImport({
 
 const stat = @import("stat.zig");
 const pat = @import("pattern.zig");
+const types = @import("types.zig");
 const strverscmp = @import("strverscmp.zig").strverscmp;
 
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
 // ---------------------------------------------------------------------------
-const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]c.struct__info;
-const SortFn = fn ([*c][*c]c.struct__info, [*c][*c]c.struct__info) callconv(.c) c_int;
+const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
+const SortFn = fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
 // ---------------------------------------------------------------------------
 // Extern from color.zig
 // ---------------------------------------------------------------------------
-// color.c
-extern var linedraw: [*c]const c.struct_linedraw;
+extern var linedraw: [*c]const types.LineDraw;
+
+// ---------------------------------------------------------------------------
+// Extern declarations for project-defined functions
+// ---------------------------------------------------------------------------
+
+// util.zig
+extern fn xmalloc(size: usize) ?*anyopaque;
+extern fn xrealloc(ptr: ?*anyopaque, size: usize) ?*anyopaque;
+extern fn scopy(s: [*c]const u8) [*c]u8;
+extern fn pathconcat(segs: [*c][*c]u8, n: c_int) [*c]u8;
+extern fn is_singleton(dir: *types.Info) bool;
+
+// hash.zig
+extern fn uidtoname(uid: c.uid_t) [*c]const u8;
+extern fn gidtoname(gid: c.gid_t) [*c]const u8;
+extern fn saveino(inode: c.ino_t, dev: c.dev_t) void;
+extern fn findino(inode: c.ino_t, dev: c.dev_t) bool;
+extern fn strhash(s: [*c]u8) [*c]u8;
+
+// filter.zig
+extern fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, ignorecase: bool) bool;
+extern fn push_filterstack(ig: ?*types.IgnoreFile) void;
+extern fn pop_filterstack() ?*types.IgnoreFile;
+extern fn gitignore_search(dir: [*c]const u8, depth: c_int) ?*types.IgnoreFile;
+extern fn new_ignorefile(dir: [*c]const u8, path: [*c]const u8, top: bool) ?*types.IgnoreFile;
+
+// info.zig
+extern fn infocheck(path: [*c]const u8, name: [*c]const u8, infotop: c_int, isdir: bool, ignorecase: bool) ?*types.Comment;
+extern fn push_infostack(inf: ?*types.InfoFile) void;
+extern fn pop_infostack() ?*types.InfoFile;
+extern fn new_infofile(dir: [*c]const u8, top: bool) ?*types.InfoFile;
+
+// color.zig
+extern fn initlinedraw(force: bool) void;
+extern fn parse_dir_colors() void;
+extern fn getcharset() [*c]const u8;
+extern fn fancy(out: ?*c.FILE, s: [*c]u8) void;
+
+// list.zig
+extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
+
+// file.zig
+extern fn file_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
+extern fn tabedfile_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
+
+// unix.zig
+extern fn unix_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
+extern fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
+extern fn unix_error(err: [*c]u8) c_int;
+extern fn unix_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
+extern fn unix_report(tot: types.Totals) void;
+
+// json.zig
+extern fn json_intro() void;
+extern fn json_outtro() void;
+extern fn json_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
+extern fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
+extern fn json_error(err: [*c]u8) c_int;
+extern fn json_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
+extern fn json_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
+extern fn json_report(tot: types.Totals) void;
+
+// xml.zig
+extern fn xml_intro() void;
+extern fn xml_outtro() void;
+extern fn xml_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
+extern fn xml_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
+extern fn xml_error(err: [*c]u8) c_int;
+extern fn xml_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
+extern fn xml_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
+extern fn xml_report(tot: types.Totals) void;
+
+// html.zig
+extern fn html_intro() void;
+extern fn html_outtro() void;
+extern fn html_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
+extern fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
+extern fn html_error(err: [*c]u8) c_int;
+extern fn html_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
+extern fn html_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
+extern fn html_report(tot: types.Totals) void;
 
 // ---------------------------------------------------------------------------
 // Globals
 // ---------------------------------------------------------------------------
 export var version: [*c]const u8 = "bo (The Bodhi Tree) v0.0.5";
 
-// Globals
-export var flag: c.struct_Flags = std.mem.zeroes(c.struct_Flags);
-export var lc: c.struct_listingcalls = std.mem.zeroes(c.struct_listingcalls);
+export var flag: types.Flags = std.mem.zeroes(types.Flags);
+export var lc: types.ListingCalls = std.mem.zeroes(types.ListingCalls);
 
 export var pattern: c_int = 0;
 export var ipattern: c_int = 0;
@@ -54,7 +134,6 @@ export var getfulltree: ?*const GetFullTreeFn = &unix_getfulltree;
 export var basesort: ?*const SortFn = &alnumsort;
 export var topsort: ?*const SortFn = null;
 
-// sLevel is only used within tree_main
 var sLevel: [*c]u8 = null;
 
 export var outfile: ?*c.FILE = null;
@@ -68,7 +147,7 @@ export var xpattern: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
 export var mb_cur_max: c_int = 0;
 
 // ---------------------------------------------------------------------------
-// Platform-conditional ifmt / fmt / ftype  (comptime if on @hasDecl)
+// Platform-conditional ifmt / ftype
 // ---------------------------------------------------------------------------
 export var ifmt: [if (@hasDecl(c, "S_IFPORT")) 10 else 8]c.mode_t =
     if (@hasDecl(c, "S_IFPORT"))
@@ -83,7 +162,7 @@ export var ftype: [if (@hasDecl(c, "S_IFPORT")) 11 else 9][*c]const u8 =
         .{ "file", "directory", "link", "char", "block", "socket", "fifo", "unknown", null };
 
 // ---------------------------------------------------------------------------
-// Sort table (module-private, mirrors C's sorts[])
+// Sort table
 // ---------------------------------------------------------------------------
 const SortEntry = struct {
     name: [*c]const u8,
@@ -119,9 +198,6 @@ inline fn cStdout() ?*c.FILE {
 }
 
 fn getMbCurMax() c_int {
-    // MB_CUR_MAX is a runtime locale value.  On glibc-based Linux systems it is
-    // exposed via __ctype_get_mb_cur_max; on macOS/__mb_cur_max; elsewhere
-    // default to 1 (single-byte) which disables the wide-char printit path.
     switch (builtin.os.tag) {
         .linux => {
             const glibc = struct {
@@ -140,7 +216,7 @@ fn getMbCurMax() c_int {
 }
 
 // ---------------------------------------------------------------------------
-// Module-level state replacing C's static locals
+// Module-level state
 // ---------------------------------------------------------------------------
 var prot_buf: [11]u8 = undefined;
 var do_date_buf: [256]u8 = undefined;
@@ -154,14 +230,12 @@ var read_dir_pathsize: usize = 0;
 // ---------------------------------------------------------------------------
 
 export fn prot(m: c.mode_t) [*c]u8 {
-    const fmt_str: [*:0]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?"; // Illumos has doors and ports
+    const fmt_str: [*:0]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?";
 
     var i: c_int = 0;
     while (ifmt[@intCast(i)] != 0 and (m & c.S_IFMT) != ifmt[@intCast(i)]) : (i += 1) {}
     prot_buf[0] = fmt_str[@intCast(i)];
 
-    // Nice, but maybe not so portable, it is should be no less portable than the
-    // old code.
     const perms = "rwxrwxrwx";
     var b: c.mode_t = c.S_IRUSR;
     var j: usize = 0;
@@ -188,7 +262,6 @@ export fn do_date(t: c.time_t) [*c]u8 {
         do_date_buf[255] = 0;
     } else {
         const cur: c.time_t = c.time(null);
-        // Use strftime() so that locale is respected:
         if (t > cur or (t + six_months) < cur) {
             _ = c.strftime(&do_date_buf, 255, "%b %e  %Y", tm);
         } else {
@@ -206,7 +279,7 @@ export fn printit(s: [*c]const u8) void {
     }
     if (mb_cur_max > 1) {
         const cs: usize = c.strlen(s) + 1;
-        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.wchar_t) * cs)));
+        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(xmalloc(@sizeOf(c.wchar_t) * cs)));
         if (c.mbstowcs(ws, s, cs) != @as(usize, @bitCast(@as(isize, -1)))) {
             if (flag.Q) _ = c.putc('"', outfile);
             var remaining: usize = cs;
@@ -278,7 +351,7 @@ export fn Ftype(mode: c.mode_t) u8 {
     if (!flag.d and m == c.S_IFDIR) return '/';
     if (m == c.S_IFSOCK) return '=';
     if (m == c.S_IFIFO) return '|';
-    if (m == c.S_IFLNK) return '@'; // Here, but never actually used though.
+    if (m == c.S_IFLNK) return '@';
     if (@hasDecl(c, "S_IFDOOR")) {
         if (m == c.S_IFDOOR) return '>';
     }
@@ -286,10 +359,9 @@ export fn Ftype(mode: c.mode_t) u8 {
     return 0;
 }
 
-export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
+export fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8 {
     var n: c_int = 0;
     buf[@intCast(n)] = 0;
-    // Not sure why this should happen, but just in case:
     if (ent == null) return buf;
     const e = ent.?;
 
@@ -301,14 +373,14 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
         }
     }
     if (flag.dev) n += c.sprintf(buf + @as(usize, @intCast(n)), " %3d", @as(c_int, @intCast(e.ldev)));
-    if (flag.p) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", prot(e.mode));
+    if (flag.p) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", prot(@intCast(e.mode)));
     if (comptime builtin.os.tag == .linux) {
         if (flag.acl) n += c.sprintf(buf + @as(usize, @intCast(n)), "%c", @as(c_int, if (e.hasacl) '+' else ' '));
     }
-    if (flag.u) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", c.uidtoname(e.uid));
-    if (flag.g) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", c.gidtoname(e.gid));
-    if (flag.s) n += psize(buf + @as(usize, @intCast(n)), e.size);
-    if (flag.D) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", do_date(if (flag.c) e.ctime else e.mtime));
+    if (flag.u) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", uidtoname(@intCast(e.uid)));
+    if (flag.g) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", gidtoname(@intCast(e.gid)));
+    if (flag.s) n += psize(buf + @as(usize, @intCast(n)), @intCast(e.size));
+    if (flag.D) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", do_date(@intCast(if (flag.c) e.ctime else e.mtime)));
     if (comptime builtin.os.tag == .linux) {
         if (flag.selinux) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", e.secontext);
     }
@@ -321,8 +393,6 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const c.struct__info) [*c]u8 {
     return buf;
 }
 
-// They cried out for ANSI-lines (not really), but here they are, as an option
-// for the xterm and console capable among you, as a run-time option.
 export fn indent(maxlevel: c_int) void {
     const spaces = [3][*c]const u8{ "   ", "  ", " " };
     const htmlspaces = [3][*c]const u8{ "&nbsp;&nbsp;&nbsp;", "&nbsp;&nbsp;", "&nbsp;" };
@@ -347,33 +417,31 @@ export fn indent(maxlevel: c_int) void {
 // Sort functions
 // ---------------------------------------------------------------------------
 
-// filesfirst and dirsfirst are now top-level meta-sorts.
-export fn filesfirst(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn filesfirst(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     if (a[0].*.isdir != b[0].*.isdir) {
         return if (a[0].*.isdir) 1 else -1;
     }
     return basesort.?(a, b);
 }
 
-export fn dirsfirst(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn dirsfirst(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     if (a[0].*.isdir != b[0].*.isdir) {
         return if (a[0].*.isdir) -1 else 1;
     }
     return basesort.?(a, b);
 }
 
-// Sorting functions
-export fn alnumsort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn alnumsort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     const v = c.strcoll(a[0].*.name, b[0].*.name);
     return if (flag.reverse) -v else v;
 }
 
-export fn versort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn versort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     const v = strverscmp(a[0].*.name, b[0].*.name);
     return if (flag.reverse) -v else v;
 }
 
-export fn mtimesort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn mtimesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     if (a[0].*.mtime == b[0].*.mtime) {
         const v = c.strcoll(a[0].*.name, b[0].*.name);
         return if (flag.reverse) -v else v;
@@ -382,7 +450,7 @@ export fn mtimesort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int 
     return if (flag.reverse) -v else v;
 }
 
-export fn ctimesort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
+export fn ctimesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     if (a[0].*.ctime == b[0].*.ctime) {
         const v = c.strcoll(a[0].*.name, b[0].*.name);
         return if (flag.reverse) -v else v;
@@ -395,13 +463,12 @@ export fn sizecmp(a: c.off_t, b: c.off_t) c_int {
     return if (a == b) 0 else if (a < b) 1 else -1;
 }
 
-export fn fsizesort(a: [*c][*c]c.struct__info, b: [*c][*c]c.struct__info) c_int {
-    var v = sizecmp(a[0].*.size, b[0].*.size);
+export fn fsizesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
+    var v = sizecmp(@intCast(a[0].*.size), @intCast(b[0].*.size));
     if (v == 0) v = c.strcoll(a[0].*.name, b[0].*.name);
     return if (flag.reverse) -v else v;
 }
 
-// ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // Linux-specific helpers
 // ---------------------------------------------------------------------------
@@ -423,23 +490,18 @@ fn has_acl(path: [*c]const u8) bool {
     return false;
 }
 
-// selinux contexts can be up to 4096 bytes, probably not more than 257 though.
-// We'll store the strings in a hash table though as there will likely only be
-// a handful of actual contexts. It would be more efficient still to compress
-// the context by hashing each string between :'s, but that would likely vastly
-// increase CPU time, for perhaps not much space savings.
 fn selinux_context(path: [*c]const u8) [*c]u8 {
     if (comptime builtin.os.tag != .linux) return null;
     const len: isize = c.getxattr(path, "security.selinux", &xpattern, c.PATH_MAX - 1);
     xpattern[@intCast(if (len < 0) 0 else len)] = 0;
-    return c.strhash(&xpattern);
+    return strhash(&xpattern);
 }
 
 // ---------------------------------------------------------------------------
 // Filesystem functions
 // ---------------------------------------------------------------------------
 
-fn doLstatInfo(path: [*c]const u8, ent: *c.struct__info) bool {
+fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
     if (comptime builtin.os.tag == .linux) {
         var lst: std.os.linux.Stat = undefined;
         if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &lst)) return false;
@@ -456,43 +518,39 @@ fn doLstatInfo(path: [*c]const u8, ent: *c.struct__info) bool {
     } else {
         var lst: c.struct_stat = undefined;
         if (c.lstat(path, &lst) < 0) return false;
-        ent.mode = lst.st_mode;
-        ent.uid = lst.st_uid;
-        ent.gid = lst.st_gid;
-        ent.size = lst.st_size;
-        ent.ldev = lst.st_dev;
-        ent.linode = lst.st_ino;
-        // st_atime/ctime/mtime are C macros not real fields; access via timespec members.
-        // macOS uses st_atimespec; POSIX (FreeBSD etc.) uses st_atim.
+        ent.mode = @intCast(lst.st_mode);
+        ent.uid = @intCast(lst.st_uid);
+        ent.gid = @intCast(lst.st_gid);
+        ent.size = @intCast(lst.st_size);
+        ent.ldev = @intCast(lst.st_dev);
+        ent.linode = @intCast(lst.st_ino);
         if (comptime @hasField(c.struct_stat, "st_atimespec")) {
-            ent.atime = lst.st_atimespec.tv_sec;
-            ent.ctime = lst.st_ctimespec.tv_sec;
-            ent.mtime = lst.st_mtimespec.tv_sec;
+            ent.atime = @intCast(lst.st_atimespec.tv_sec);
+            ent.ctime = @intCast(lst.st_ctimespec.tv_sec);
+            ent.mtime = @intCast(lst.st_mtimespec.tv_sec);
         } else {
-            ent.atime = lst.st_atim.tv_sec;
-            ent.ctime = lst.st_ctim.tv_sec;
-            ent.mtime = lst.st_mtim.tv_sec;
+            ent.atime = @intCast(lst.st_atim.tv_sec);
+            ent.ctime = @intCast(lst.st_ctim.tv_sec);
+            ent.mtime = @intCast(lst.st_mtim.tv_sec);
         }
         return true;
     }
 }
 
-// Split out stat portion from read_dir as prelude to just using stat structure directly.
-fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
+fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (getinfo_lbuf == null) {
         getinfo_lbufsize = c.PATH_MAX;
-        getinfo_lbuf = @ptrCast(c.xmalloc(getinfo_lbufsize));
+        getinfo_lbuf = @ptrCast(xmalloc(getinfo_lbufsize));
     }
 
-    var ent_storage: c.struct__info = std.mem.zeroes(c.struct__info);
+    var ent_storage: types.Info = std.mem.zeroes(types.Info);
 
     if (!doLstatInfo(path, &ent_storage)) return null;
 
-    // Determine if it's a symlink
-    const lst_mode: c.mode_t = ent_storage.mode;
+    const lst_mode: c.mode_t = @intCast(ent_storage.mode);
     var st_mode: c.mode_t = lst_mode;
-    var st_dev: c.dev_t = ent_storage.ldev;
-    var st_ino: c.ino_t = ent_storage.linode;
+    var st_dev: c.dev_t = @intCast(ent_storage.ldev);
+    var st_ino: c.ino_t = @intCast(ent_storage.linode);
     var rs: c_int = 0;
 
     if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
@@ -514,12 +572,6 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
                 st_ino = st.st_ino;
             }
         }
-        // Orphan symlink: the target doesn't exist, so "target mode/dev/inode"
-        // are undefined. Zero them — downstream code reads st_mode as lnkmode
-        // (target type) and st_dev/st_ino as the saveino dedup key. Leaving
-        // them at the link's own lst_* values would lie: lnkmode would report
-        // S_IFLNK ("target is a symlink", meaningless) and saveino would key
-        // on the link itself. C handles this with memset(&st, 0, sizeof(st)).
         if (rs < 0) {
             st_mode = 0;
             st_dev = 0;
@@ -529,7 +581,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
 
     const isdir: bool = (st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR);
 
-    if (flag.gitignore and c.filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
+    if (flag.gitignore and filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
 
     if ((lst_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR) and !(flag.l and ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR)))) {
         if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, file_pathsep[0]) == 0) return null;
@@ -538,20 +590,16 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
 
     if (flag.d and ((st_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR))) return null;
 
-    // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
+    const ent: *types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Info))));
+    @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
 
-    const ent: *c.struct__info = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct__info))));
-    @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(c.struct__info)], 0);
-
-    ent.name = c.scopy(name);
-    // We should just incorporate struct stat into _info, and eliminate this unnecessary copying.
-    // Made sense long ago when we had fewer options and didn't need half of stat.
-    ent.mode = lst_mode;
+    ent.name = scopy(name);
+    ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
     ent.size = ent_storage.size;
-    ent.dev = st_dev;
-    ent.inode = st_ino;
+    ent.dev = @intCast(st_dev);
+    ent.inode = @intCast(st_ino);
     ent.ldev = ent_storage.ldev;
     ent.linode = ent_storage.linode;
     ent.lnk = null;
@@ -570,7 +618,6 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
 
     ent.isdir = isdir;
 
-    // These should perhaps be eliminated, as they're barely used:
     ent.issok = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFSOCK));
     ent.isfifo = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFIFO));
     ent.isexe = (st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
@@ -579,18 +626,18 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
         const lst_size: usize = @intCast(ent_storage.size);
         if (lst_size + 1 > getinfo_lbufsize) {
             getinfo_lbufsize = lst_size + 8192;
-            getinfo_lbuf = @ptrCast(c.xrealloc(getinfo_lbuf, getinfo_lbufsize));
+            getinfo_lbuf = @ptrCast(xrealloc(getinfo_lbuf, getinfo_lbufsize));
         }
         const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
         if (len < 0) {
-            ent.lnk = c.scopy("[Error reading symbolic link information]");
+            ent.lnk = scopy("[Error reading symbolic link information]");
             ent.isdir = false;
-            ent.lnkmode = st_mode;
+            ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = c.scopy(getinfo_lbuf);
+            ent.lnk = scopy(getinfo_lbuf);
             if (rs < 0) ent.orphan = true;
-            ent.lnkmode = st_mode;
+            ent.lnkmode = @intCast(st_mode);
         }
     }
 
@@ -599,7 +646,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*c.struct__info {
     return ent;
 }
 
-export fn free_dir(d: [*c][*c]c.struct__info) void {
+export fn free_dir(d: [*c][*c]types.Info) void {
     var i: usize = 0;
     while (d[i] != null) : (i += 1) {
         c.free(d[i].*.name);
@@ -609,17 +656,15 @@ export fn free_dir(d: [*c][*c]c.struct__info) void {
             while (d[i].*.comment[j] != null) : (j += 1) c.free(d[i].*.comment[j]);
         }
         if (d[i].*.err != null) c.free(d[i].*.err);
-        // d[i]->selinux is a hashed string -- do not free.
-        // d[i]->tag is a pointer to a string constant -- do not free.
         c.free(@ptrCast(d[i]));
     }
     c.free(@ptrCast(d));
 }
 
-export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__info {
+export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info {
     if (read_dir_path == null) {
         read_dir_pathsize = c.strlen(dir) + c.PATH_MAX;
-        read_dir_path = @ptrCast(c.xmalloc(read_dir_pathsize));
+        read_dir_path = @ptrCast(xmalloc(read_dir_pathsize));
     }
 
     const es: bool = dir[c.strlen(dir) - 1] == '/';
@@ -628,7 +673,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
     if (d == null) return null;
 
     var ne: usize = c.MINIT;
-    var dl: [*c][*c]c.struct__info = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]c.struct__info) * ne)));
+    var dl: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * ne)));
     var p: usize = 0;
 
     while (true) {
@@ -643,7 +688,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
         const elen = c.strlen(dname);
         if (dlen + elen + 2 > read_dir_pathsize) {
             read_dir_pathsize = dlen + elen + c.PATH_MAX;
-            read_dir_path = @ptrCast(c.xrealloc(read_dir_path, read_dir_pathsize));
+            read_dir_path = @ptrCast(xrealloc(read_dir_path, read_dir_pathsize));
         }
         if (es) {
             _ = c.sprintf(read_dir_path, "%s%s", dir, dname);
@@ -653,20 +698,20 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
 
         const info = getinfo(dname, read_dir_path);
         if (info) |inf| {
-            var com: ?*c.struct_comment = null;
+            var com: ?*types.Comment = null;
             if (flag.showinfo) {
-                com = c.infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
+                com = infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
             }
             if (com != null) {
                 var cnt: usize = 0;
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                inf.comment = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
+                inf.comment = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = c.scopy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) inf.comment[ci] = scopy(com.?.desc[ci]);
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(c.xrealloc(@ptrCast(dl), @sizeOf([*c]c.struct__info) * (ne + c.MINC))));
+                dl = @ptrCast(@alignCast(xrealloc(@ptrCast(dl), @sizeOf([*c]types.Info) * (ne + c.MINC))));
                 ne += c.MINC;
             }
             dl[p] = inf;
@@ -685,45 +730,41 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]c.struct__
     return dl;
 }
 
-export fn push_files(dir: [*c]const u8, ig: [*c]?*c.struct_ignorefile, inf: [*c]?*c.struct_infofile, top: bool) void {
+export fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void {
     var path_buf: [c.PATH_MAX]u8 = undefined;
 
     if (flag.gitignore) {
-        var tig: ?*c.struct_ignorefile = null;
-        // Not going to implement git configs so no core.excludesFile support.
+        var tig: ?*types.IgnoreFile = null;
         if (top) {
             const stmp = c.getenv("GIT_DIR");
             if (stmp != null) {
                 var segs = [_][*c]u8{ &path_buf, stmp, @constCast("info/exclude") };
-                c.push_filterstack(c.new_ignorefile(stmp, c.pathconcat(&segs, 3), false));
-                tig = c.new_ignorefile(stmp, c.pathconcat(&segs, 3), false);
+                push_filterstack(new_ignorefile(stmp, pathconcat(@ptrCast(&segs), 3), false));
+                tig = new_ignorefile(stmp, pathconcat(@ptrCast(&segs), 3), false);
             }
         }
         if (top) {
-            ig.* = c.gitignore_search(dir, 0);
+            ig.* = gitignore_search(dir, 0);
         } else {
-            ig.* = c.new_ignorefile(dir, dir, top);
-            c.push_filterstack(ig.*);
+            ig.* = new_ignorefile(dir, dir, top);
+            push_filterstack(ig.*);
         }
         if (ig.* == null) ig.* = tig;
     }
     if (flag.showinfo) {
-        inf.* = c.new_infofile(dir, top);
-        c.push_infostack(inf.*);
+        inf.* = new_infofile(dir, top);
+        push_infostack(inf.*);
     }
 }
 
-// This is for all the impossible things people wanted the old tree to do.
-// This can and will use a large amount of memory for large directory trees
-// and also take some time.
-export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]c.struct__info {
+export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
     var pathsize: usize = 0;
-    var ig: ?*c.struct_ignorefile = null;
-    var inf: ?*c.struct_infofile = null;
-    var sav: [*c][*c]c.struct__info = undefined;
-    var dir_ptr: [*c][*c]c.struct__info = undefined;
+    var ig: ?*types.IgnoreFile = null;
+    var inf: ?*types.InfoFile = null;
+    var sav: [*c][*c]types.Info = undefined;
+    var dir_ptr: [*c][*c]types.Info = undefined;
     var n: isize = undefined;
     var tmp_pattern: c_int = 0;
 
@@ -740,70 +781,68 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
             if (c.stat(d, &sb) == 0) dev = sb.st_dev;
         }
     }
-    // if the directory name matches, turn off pattern matching for contents
     const last_name: [*c]const u8 = c.strrchr(d, file_pathsep[0]);
     if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name.? + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
         tmp_pattern = pattern;
         pattern = 0;
     }
 
-    c.push_files(d, @ptrCast(&ig), @ptrCast(&inf), lev == 0);
+    push_files(d, @ptrCast(&ig), @ptrCast(&inf), lev == 0);
 
-    sav = c.read_dir(d, &n, @intFromBool(inf != null));
+    sav = read_dir(d, &n, @intFromBool(inf != null));
     dir_ptr = sav;
-    // We used to restore pattern from tmp_pattern here:
 
     if (dir_ptr == null and n != 0) {
-        err.* = c.scopy("error opening dir");
+        err.* = scopy("error opening dir");
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     if (n == 0) {
-        if (sav != null) c.free_dir(sav);
+        if (sav != null) free_dir(sav);
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     pathsize = c.PATH_MAX;
-    path = @ptrCast(c.xmalloc(pathsize));
+    path = @ptrCast(xmalloc(pathsize));
 
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = c.scopy(path);
-        c.free_dir(sav);
+        err.* = scopy(path);
+        free_dir(sav);
         c.free(path);
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
 
     if (lev >= maxdirs - 1) {
-        dirs = @ptrCast(@alignCast(c.xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
+        dirs = @ptrCast(@alignCast(xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
         maxdirs += 1024;
     }
 
     while (dir_ptr.* != null) {
         const entry = dir_ptr.*;
-        if (entry.*.isdir and !(flag.xdev and dev != entry.*.dev)) {
+        if (entry.*.isdir and !(flag.xdev and dev != @as(c.dev_t, @intCast(entry.*.dev)))) {
             if (entry.*.lnk != null) {
                 if (flag.l) {
-                    if (c.findino(entry.*.inode, entry.*.dev)) {
-                        entry.*.err = c.scopy("recursive, not followed");
+                    if (findino(@intCast(entry.*.inode), @intCast(entry.*.dev))) {
+                        entry.*.err = scopy("recursive, not followed");
                     } else {
-                        c.saveino(entry.*.inode, entry.*.dev);
+                        saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
                         if (entry.*.lnk[0] == '/') {
-                            entry.*.child = unix_getfulltree(entry.*.lnk, lev + 1, dev, &(entry.*.size), &(entry.*.err));
+                            entry.*.child = unix_getfulltree(entry.*.lnk, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
                         } else {
                             const dlen = c.strlen(d);
                             const llen = c.strlen(entry.*.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
-                                path = @ptrCast(c.xrealloc(path, pathsize));
+                                path = @ptrCast(xrealloc(path, pathsize));
                             }
                             if (flag.f and c.strcmp(d, "/") == 0) {
                                 _ = c.sprintf(path, "%s%s", d, entry.*.lnk);
                             } else {
                                 _ = c.sprintf(path, "%s/%s", d, entry.*.lnk);
                             }
-                            entry.*.child = unix_getfulltree(path, lev + 1, dev, &(entry.*.size), &(entry.*.err));
+                            entry.*.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
                         }
                     }
                 }
@@ -812,7 +851,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                 const nlen = c.strlen(entry.*.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
-                    path = @ptrCast(c.xrealloc(path, pathsize));
+                    path = @ptrCast(xrealloc(path, pathsize));
                 }
 
                 if (flag.f and c.strcmp(d, "/") == 0) {
@@ -821,28 +860,27 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                     _ = c.sprintf(path, "%s/%s", d, entry.*.name);
                 }
 
-                c.saveino(entry.*.inode, entry.*.dev);
-                entry.*.child = unix_getfulltree(path, lev + 1, dev, &(entry.*.size), &(entry.*.err));
+                saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
+                entry.*.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
 
                 if (flag.condense_singletons) {
-                    while (c.is_singleton(@ptrCast(entry))) {
+                    while (is_singleton(@ptrCast(entry))) {
                         const child = entry.*.child;
                         var segs = [_][*c]u8{ entry.*.name, child[0].*.name };
-                        const new_name = c.pathconcat(&segs, 2);
+                        const new_name = pathconcat(@ptrCast(&segs), 2);
                         c.free(entry.*.name);
-                        entry.*.name = c.scopy(new_name);
+                        entry.*.name = scopy(new_name);
                         entry.*.child = child[0].*.child;
                         entry.*.condensed = entry.*.condensed + 1 + child[0].*.condensed;
-                        c.free_dir(child);
+                        free_dir(child);
                     }
                 }
             }
-            // prune empty folders, unless they match the requested pattern
             if (flag.prune and entry.*.child == null and
                 !(flag.matchdirs and pattern != 0 and pat.include(entry.*.name, patterns[0..@intCast(pattern)], entry.*.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
             {
                 const xp = entry;
-                var p: [*c][*c]c.struct__info = dir_ptr;
+                var p: [*c][*c]types.Info = dir_ptr;
                 while (p.* != null) : (p += 1) p.* = (p + 1).*;
                 n -= 1;
                 c.free(xp.*.name);
@@ -851,7 +889,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                 continue;
             }
         }
-        if (flag.du) size.* += entry.*.size;
+        if (flag.du) size.* += @intCast(entry.*.size);
         dir_ptr += 1;
     }
 
@@ -860,19 +898,18 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         tmp_pattern = 0;
     }
 
-    // sorting needs to be deferred for --du:
     if (topsort != null) {
         const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-        c.qsort(@ptrCast(sav), @intCast(n), @sizeOf([*c]c.struct__info), cmp);
+        c.qsort(@ptrCast(sav), @intCast(n), @sizeOf([*c]types.Info), cmp);
     }
 
     c.free(path);
     if (n == 0) {
-        c.free_dir(sav);
+        free_dir(sav);
         return null;
     }
-    if (ig != null) _ = c.pop_filterstack();
-    if (inf != null) _ = c.pop_infostack();
+    if (ig != null) _ = pop_filterstack();
+    if (inf != null) _ = pop_infostack();
     return sav;
 }
 
@@ -880,7 +917,6 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-// Time to switch to getopt()?
 fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u8) [*c]u8 {
     var ret: [*c]u8 = null;
     const len: usize = c.strlen(prefix);
@@ -894,7 +930,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
                 j.* = c.strlen(argv[i]) - 1;
             } else {
                 _ = c.fprintf(cStderr(), "tree: Missing argument to %s=\n", prefix);
-                if (c.strcmp(prefix, "--charset=") == 0) c.initlinedraw(true);
+                if (c.strcmp(prefix, "--charset=") == 0) initlinedraw(true);
                 c.exit(c.EXIT_FAILURE);
             }
         } else if (argv[n.*] != null) {
@@ -903,7 +939,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
             j.* = c.strlen(argv[i]) - 1;
         } else {
             _ = c.fprintf(cStderr(), "tree: Missing argument to %s\n", prefix);
-            if (c.strcmp(prefix, "--charset") == 0) c.initlinedraw(true);
+            if (c.strcmp(prefix, "--charset") == 0) initlinedraw(true);
             c.exit(c.EXIT_FAILURE);
         }
     }
@@ -923,10 +959,10 @@ export fn setoutput(filename: [*c]const u8) void {
 }
 
 fn print_usage() void {
-    c.parse_dir_colors();
-    c.initlinedraw(false);
+    parse_dir_colors();
+    initlinedraw(false);
 
-    c.fancy(cStderr(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+    fancy(cStderr(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -940,10 +976,10 @@ fn print_usage() void {
 }
 
 fn print_help() void {
-    c.parse_dir_colors();
-    c.initlinedraw(false);
+    parse_dir_colors();
+    initlinedraw(false);
 
-    c.fancy(cStdout(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+    fancy(cStdout(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -955,7 +991,7 @@ fn print_help() void {
         (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
         "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
 
-    c.fancy(cStdout(), @constCast("  \x08------- Listing options -------\r\n" ++
+    fancy(cStdout(), @constCast("  \x08------- Listing options -------\r\n" ++
         "  \x08-a\r            All files are listed.\n" ++
         "  \x08-d\r            List directories only.\n" ++
         "  \x08-l\r            Follow symbolic links like directories.\n" ++
@@ -1000,7 +1036,7 @@ fn print_help() void {
         else
             "")));
 
-    c.fancy(cStdout(), @constCast("  \x08------- Sorting options -------\r\n" ++
+    fancy(cStdout(), @constCast("  \x08------- Sorting options -------\r\n" ++
         "  \x08-v\r            Sort files alphanumerically by version.\n" ++
         "  \x08-t\r            Sort files by last modification time.\n" ++
         "  \x08-c\r            Sort files by last status change time.\n" ++
@@ -1060,10 +1096,10 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     var showversion: bool = false;
     var opt_toggle: bool = false;
 
-    @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(c.struct_Flags)], 0);
+    @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(types.Flags)], 0);
 
     maxdirs = c.PATH_MAX;
-    dirs = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c_int) * maxdirs)));
+    dirs = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * maxdirs)));
     @memset(@as([*]u8, @ptrCast(dirs))[0 .. @sizeOf(c_int) * maxdirs], 0);
     dirs[0] = 0;
     Level = -1;
@@ -1071,7 +1107,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     _ = c.setlocale(c.LC_CTYPE, "");
     _ = c.setlocale(c.LC_COLLATE, "");
 
-    charset = c.getcharset();
+    charset = getcharset();
     if (charset == null) {
         const codeset = c.nl_langinfo(c.CODESET);
         if (c.strcmp(codeset, "UTF-8") == 0 or c.strcmp(codeset, "utf8") == 0) {
@@ -1081,25 +1117,23 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
 
     const noop = struct {
         fn noop() callconv(.c) void {}
-        fn close(_: [*c]c.struct__info, _: c_int, _: c_int) callconv(.c) void {} // file, level, needcomma
+        fn close(_: ?*types.Info, _: c_int, _: c_int) callconv(.c) void {}
     };
 
-    lc = c.struct_listingcalls{
-        .intro = noop.noop,
-        .outtro = noop.noop,
-        .printinfo = c.unix_printinfo,
-        .printfile = c.unix_printfile,
-        .@"error" = c.unix_error,
-        .newline = c.unix_newline,
-        .close = noop.close,
-        .report = c.unix_report,
+    lc = types.ListingCalls{
+        .intro = &noop.noop,
+        .outtro = &noop.noop,
+        .printinfo = &unix_printinfo,
+        .printfile = &unix_printfile,
+        .@"error" = &unix_error,
+        .newline = &unix_newline,
+        .close = &noop.close,
+        .report = &unix_report,
     };
 
-    // Still a hack, but assume that if the macro is defined, we can use it:
     mb_cur_max = getMbCurMax();
 
     if (comptime builtin.os.tag == .linux) {
-        // Output JSON automatically to "stddata" if present:
         const stddata_fd_str = c.getenv(c.ENV_STDDATA_FD);
         if (stddata_fd_str != null) {
             var std_fd: c_int = c.atoi(stddata_fd_str);
@@ -1108,15 +1142,15 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                 flag.J = true;
                 flag.noindent = true;
                 _nl = "";
-                lc = c.struct_listingcalls{
-                    .intro = c.json_intro,
-                    .outtro = c.json_outtro,
-                    .printinfo = c.json_printinfo,
-                    .printfile = c.json_printfile,
-                    .@"error" = c.json_error,
-                    .newline = c.json_newline,
-                    .close = c.json_close,
-                    .report = c.json_report,
+                lc = types.ListingCalls{
+                    .intro = &json_intro,
+                    .outtro = &json_outtro,
+                    .printinfo = &json_printinfo,
+                    .printfile = &json_printfile,
+                    .@"error" = &json_error,
+                    .newline = &json_newline,
+                    .close = &json_close,
+                    .report = &json_report,
                 };
                 outfile = c.fdopen(std_fd, "w");
             }
@@ -1138,7 +1172,6 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                     'l' => flag.l = if (opt_toggle) !flag.l else true,
                     's' => flag.s = if (opt_toggle) !flag.s else true,
                     'h' => {
-                        // Assume they also want -s
                         flag.h = if (opt_toggle) !flag.h else true;
                         flag.s = flag.h;
                     },
@@ -1186,45 +1219,45 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                         flag.X = true;
                         flag.H = false;
                         flag.J = false;
-                        lc = c.struct_listingcalls{
-                            .intro = c.xml_intro,
-                            .outtro = c.xml_outtro,
-                            .printinfo = c.xml_printinfo,
-                            .printfile = c.xml_printfile,
-                            .@"error" = c.xml_error,
-                            .newline = c.xml_newline,
-                            .close = c.xml_close,
-                            .report = c.xml_report,
+                        lc = types.ListingCalls{
+                            .intro = &xml_intro,
+                            .outtro = &xml_outtro,
+                            .printinfo = &xml_printinfo,
+                            .printfile = &xml_printfile,
+                            .@"error" = &xml_error,
+                            .newline = &xml_newline,
+                            .close = &xml_close,
+                            .report = &xml_report,
                         };
                     },
                     'J' => {
                         flag.J = true;
                         flag.X = false;
                         flag.H = false;
-                        lc = c.struct_listingcalls{
-                            .intro = c.json_intro,
-                            .outtro = c.json_outtro,
-                            .printinfo = c.json_printinfo,
-                            .printfile = c.json_printfile,
-                            .@"error" = c.json_error,
-                            .newline = c.json_newline,
-                            .close = c.json_close,
-                            .report = c.json_report,
+                        lc = types.ListingCalls{
+                            .intro = &json_intro,
+                            .outtro = &json_outtro,
+                            .printinfo = &json_printinfo,
+                            .printfile = &json_printfile,
+                            .@"error" = &json_error,
+                            .newline = &json_newline,
+                            .close = &json_close,
+                            .report = &json_report,
                         };
                     },
                     'H' => {
                         flag.H = true;
                         flag.X = false;
                         flag.J = false;
-                        lc = c.struct_listingcalls{
-                            .intro = c.html_intro,
-                            .outtro = c.html_outtro,
-                            .printinfo = c.html_printinfo,
-                            .printfile = c.html_printfile,
-                            .@"error" = c.html_error,
-                            .newline = c.html_newline,
-                            .close = c.html_close,
-                            .report = c.html_report,
+                        lc = types.ListingCalls{
+                            .intro = &html_intro,
+                            .outtro = &html_outtro,
+                            .printinfo = &html_printinfo,
+                            .printfile = &html_printfile,
+                            .@"error" = &html_error,
+                            .newline = &html_newline,
+                            .close = &html_close,
+                            .report = &html_report,
                         };
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -H option.\n");
@@ -1237,8 +1270,6 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             flag.htmloffset = true;
                             host += 1;
                         }
-                        // Allows a / if that is the only character as the 'host':
-                        //      if (k && host[k] == '/') host[k] = '\0';
                         sp = "&nbsp;";
                     },
                     'T' => {
@@ -1288,7 +1319,6 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 optf = false;
                                 break;
                             }
-                            // Long options that don't take parameters should just use strcmp:
                             if (c.strcmp("--help", argv[i]) == 0) {
                                 print_help();
                                 c.exit(c.EXIT_SUCCESS);
@@ -1358,7 +1388,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             arg = longArg(argv, i, &j, &n, "--timefmt");
                             if (arg != null) {
-                                timefmt = c.scopy(arg);
+                                timefmt = scopy(arg);
                                 flag.D = true;
                                 break;
                             }
@@ -1395,13 +1425,13 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             if (c.strcmp("--fromtabfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &c.tabedfile_getfulltree;
+                                getfulltree = &tabedfile_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--fromfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &c.file_getfulltree;
+                                getfulltree = &file_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--metafirst", argv[i]) == 0) {
@@ -1412,8 +1442,8 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             arg = longArg(argv, i, &j, &n, "--gitfile");
                             if (arg != null) {
                                 flag.gitignore = true;
-                                const new_ig = c.new_ignorefile(arg, arg, false);
-                                if (new_ig != null) c.push_filterstack(new_ig) else {
+                                const new_ig = new_ignorefile(arg, arg, false);
+                                if (new_ig != null) push_filterstack(new_ig) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load gitignore file\n");
                                     c.exit(c.EXIT_FAILURE);
                                 }
@@ -1432,8 +1462,8 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             arg = longArg(argv, i, &j, &n, "--infofile");
                             if (arg != null) {
                                 flag.showinfo = true;
-                                const new_inf = c.new_infofile(arg, false);
-                                if (new_inf != null) c.push_infostack(new_inf) else {
+                                const new_inf = new_infofile(arg, false);
+                                if (new_inf != null) push_infostack(new_inf) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load infofile\n");
                                     c.exit(c.EXIT_FAILURE);
                                 }
@@ -1441,12 +1471,12 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             arg = longArg(argv, i, &j, &n, "--hintro");
                             if (arg != null) {
-                                Hintro = c.scopy(arg);
+                                Hintro = scopy(arg);
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--houtro");
                             if (arg != null) {
-                                Houtro = c.scopy(arg);
+                                Houtro = scopy(arg);
                                 break;
                             }
                             if (c.strcmp("--fflinks", argv[i]) == 0) {
@@ -1463,17 +1493,15 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             if (arg != null) {
                                 if (c.strchr(arg, ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
-                                    arg = c.scopy(&xpattern);
+                                    arg = scopy(&xpattern);
                                 } else {
-                                    scheme = c.scopy(arg);
+                                    scheme = scopy(arg);
                                 }
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--authority");
                             if (arg != null) {
-                                // I don't believe that . by itself can be a valid hostname,
-                                // so it will do as a null authority.
-                                if (c.strcmp(arg, ".") == 0) authority = c.scopy("") else authority = c.scopy(arg);
+                                if (c.strcmp(arg, ".") == 0) authority = scopy("") else authority = scopy(arg);
                                 break;
                             }
                             if (c.strcmp("--opt-toggle", argv[i]) == 0) {
@@ -1518,13 +1546,11 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             print_usage();
                             c.exit(c.EXIT_FAILURE);
                         }
-                        // Falls through
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         print_usage();
                         c.exit(c.EXIT_FAILURE);
                     },
                     else => {
-                        // printf("here i = %d, n = %d\n", i, n);
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         print_usage();
                         c.exit(c.EXIT_FAILURE);
@@ -1533,13 +1559,13 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
+                dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
                 q = c.MINIT;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(c.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
+                dirname = @ptrCast(@alignCast(xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
                 q += c.MINC;
             }
-            dirname[p] = c.scopy(argv[i]);
+            dirname[p] = scopy(argv[i]);
             p += 1;
         }
     }
@@ -1552,44 +1578,41 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
 
     setoutput(outfilename);
 
-    c.parse_dir_colors();
-    c.initlinedraw(false);
+    parse_dir_colors();
+    initlinedraw(false);
 
     if (showversion) {
         _ = c.fprintf(outfile, "%s\n", version);
         c.exit(c.EXIT_SUCCESS);
     }
 
-    // Insure sensible defaults and sanity check options:
     if (dirname == null) {
-        dirname = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * 2)));
-        dirname[0] = c.scopy(".");
+        dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * 2)));
+        dirname[0] = scopy(".");
         dirname[1] = null;
     }
     if (topsort == null) topsort = basesort;
     if (basesort == null) topsort = null;
     if (timefmt != null) _ = c.setlocale(c.LC_TIME, "");
-    if (flag.d) flag.prune = false; // You'll just get nothing otherwise.
+    if (flag.d) flag.prune = false;
     if (flag.R and Level == -1) flag.R = false;
 
     if (flag.hyper and authority == null) {
-        // If the hostname is longer than PATH_MAX, maybe it's just as well we don't
-        // try to use it.
         if (c.gethostname(&xpattern, c.PATH_MAX) < 0) {
             _ = c.fprintf(cStderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
-            authority = c.scopy(&xpattern);
+            authority = scopy(&xpattern);
         }
     }
 
     if (flag.showinfo) {
-        c.push_infostack(c.new_infofile(c.INFO_PATH, false));
+        push_infostack(new_infofile(c.INFO_PATH, false));
     }
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;
 
-    c.emit_tree(dirname, needfulltree);
+    emit_tree(dirname, needfulltree);
 
     if (outfilename != null) _ = c.fclose(outfile);
 
