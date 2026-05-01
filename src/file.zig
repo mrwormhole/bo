@@ -16,7 +16,6 @@ extern var topsort: ?*const fn (
     [*c][*c]types.Info,
     [*c][*c]types.Info,
 ) callconv(.c) c_int;
-extern var outfile: ?*c.FILE;
 extern var file_comment: [*c]u8;
 extern var file_pathsep: [*c]u8;
 extern var patterns: [*c][*c]u8;

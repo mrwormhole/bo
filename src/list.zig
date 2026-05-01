@@ -65,7 +65,7 @@ extern var flag: types.Flags;
 extern var getfulltree: ?*const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
 extern var topsort: ?*const fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
-extern var outfile: ?*c.FILE;
+extern var outfile: *std.fs.File;
 extern var dirs: [*c]c_int;
 extern var errors: c_int;
 extern var Level: isize;
@@ -73,7 +73,7 @@ extern var htmldirlen: usize;
 
 extern fn saveino(ino: c.ino_t, dev: c.dev_t) void;
 extern fn findino(ino: c.ino_t, dev: c.dev_t) bool;
-extern fn url_encode(fd: *c.FILE, s: [*c]u8) bool;
+extern fn url_encode(w: *std.Io.Writer, s: [*c]u8) bool;
 extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
 extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info;
 extern fn free_dir(d: [*c][*c]types.Info) void;
@@ -82,23 +82,20 @@ extern fn pop_filterstack() ?*types.IgnoreFile;
 extern fn pop_infostack() ?*types.InfoFile;
 extern fn xmalloc(size: usize) *anyopaque;
 extern fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque;
-extern fn setoutput(filename: [*c]const u8) void;
-
-extern var lc: types.ListingCalls;
 
 var errbuf: [256]u8 = undefined;
 var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
 var dirpathoffset: usize = 0;
 
-export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
+export fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void {
     // (optional) Hanging slashes are a real pain to deal with
-    var slash = url_encode(out.?, &realbasepath);
+    var slash = url_encode(w, &realbasepath);
     if (dirname[dirpathoffset] != 0) {
         slash = slash or (dirname[dirpathoffset] == '/');
-        if (!slash) _ = c.fputc('/', out);
-        if (!url_encode(out.?, dirname + dirpathoffset)) _ = c.fputc('/', out);
+        if (!slash) w.writeByte('/') catch {};
+        if (!url_encode(w, dirname + dirpathoffset)) w.writeByte('/') catch {};
     } else if (!slash) {
-        _ = c.fputc('/', out);
+        w.writeByte('/') catch {};
     }
 }
 
@@ -106,7 +103,7 @@ export fn emit_hyperlink_path(out: ?*c.FILE, dirname: [*c]u8) void {
 //  analysis of the different outputs is required.  This all is not as clean as I
 //  had hoped it to be.
 
-export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
+pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool) void {
     var tot = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
@@ -197,7 +194,8 @@ export fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void {
     lc.outtro.?();
 }
 
-export fn listdir(
+pub fn listdir(
+    lc: types.ListingCalls,
     dirname: [*c]u8,
     dir_in: [*c][*c]types.Info,
     lev: c_int,
@@ -279,7 +277,7 @@ export fn listdir(
 
                 if (Level >= 0 and lev > Level) {
                     if (flag.R) {
-                        const outsave = outfile;
+                        const outsave = outfile.*;
                         var paths = [_][*c]u8{ newpath, null };
                         const output: [*c]u8 = @ptrCast(xmalloc(c.strlen(newpath) + 13));
                         const dirsave: [*c]c_int = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
@@ -287,12 +285,17 @@ export fn listdir(
                         const copy_bytes: usize = @sizeOf(c_int) * @as(usize, @intCast(lev + 1));
                         _ = c.memcpy(dirsave, dirs, copy_bytes);
                         _ = c.sprintf(output, "%s/00Tree.html", newpath);
-                        setoutput(output);
-                        emit_tree(&paths, hasfulltree);
+                        const output_name = std.mem.span(@as([*:0]const u8, @ptrCast(output)));
+                        outfile.* = std.fs.cwd().createFile(output_name, .{}) catch {
+                            std.debug.print("tree: invalid filename '{s}'\n", .{output_name});
+                            c.exit(c.EXIT_FAILURE);
+                            unreachable;
+                        };
+                        emit_tree(lc, &paths, hasfulltree);
 
                         c.free(output);
-                        _ = c.fclose(outfile);
-                        outfile = outsave;
+                        outfile.close();
+                        outfile.* = outsave;
 
                         _ = c.memcpy(dirs, dirsave, copy_bytes);
                         c.free(dirsave);
@@ -336,7 +339,7 @@ export fn listdir(
         if (descend > 0) {
             lc.newline.?(entry, lev, 0, 0);
 
-            subtotal = listdir(newpath, subdir, lev + 1, dev, hasfulltree);
+            subtotal = listdir(lc, newpath, subdir, lev + 1, dev, hasfulltree);
             tot.dirs += subtotal.dirs;
             tot.files += subtotal.files;
         } else if (needsclosed == 0) {

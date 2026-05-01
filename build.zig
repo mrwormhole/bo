@@ -31,11 +31,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     addZigObject(b, exe, target, optimize, "xml", .{});
     addZigObject(b, exe, target, optimize, "html", .{});
     addZigObject(b, exe, target, optimize, "list", .{});
-    addZigObject(b, exe, target, optimize, "unix", .{});
     addZigObject(b, exe, target, optimize, "info", .{});
     addZigObject(b, exe, target, optimize, "filter", .{});
     addZigObject(b, exe, target, optimize, "file", .{});
-    addZigObject(b, exe, target, optimize, "color", .{});
 
     return exe;
 }

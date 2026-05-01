@@ -1,5 +1,7 @@
 //! XML renderer ported from xml.c.
 
+const std = @import("std");
+
 // <tree>
 //   <directory name="name" mode=0777 size=### user="user" group="group" inode=### dev=### time="00:00 00-00-0000">
 //     <link name="name" target="name" ...>
@@ -28,7 +30,7 @@ const c = @cImport({
 const types = @import("types.zig");
 
 extern var flag: types.Flags;
-extern var outfile: ?*c.FILE;
+extern var outfile: *std.fs.File;
 extern var _nl: [*c]const u8;
 extern var charset: [*c]const u8;
 
@@ -44,60 +46,62 @@ extern fn prot(mode: c.mode_t) [*c]u8;
 extern fn do_date(t: c.time_t) [*c]u8;
 
 // XML reuses the HTML encoder for attribute escaping (&, <, >, ").
-extern fn html_encode(fd: *c.FILE, s: [*c]u8) void;
+extern fn html_encode(w: *std.Io.Writer, s: [*c]u8) void;
 
-export fn xml_indent(maxlevel: c_int) void {
-    const spaces = [_][*:0]const u8{ "    ", "   ", "  ", " ", "" };
+fn xml_indent(w: *std.Io.Writer, maxlevel: c_int) void {
+    const spaces = [_][]const u8{ "    ", "   ", "  ", " ", "" };
     if (flag.noindent) return;
 
     const extra: c_int = if (flag.remove_space) 1 else 0;
     const clvl: usize = @intCast(flag.compress_indent + extra);
-    const out = outfile.?;
 
-    _ = c.fprintf(out, "%s", spaces[clvl]);
+    w.writeAll(spaces[clvl]) catch {};
     var i: c_int = 0;
     while (i < maxlevel) : (i += 1) {
-        _ = c.fprintf(out, "%s", spaces[clvl]);
+        w.writeAll(spaces[clvl]) catch {};
     }
 }
 
-export fn xml_fillinfo(ent: *types.Info) void {
-    const out = outfile.?;
-
-    if (flag.inode) {
-        if (@sizeOf(c.ino_t) == @sizeOf(c_longlong)) {
-            _ = c.fprintf(out, " inode=\"%lld\"", @as(c_longlong, @intCast(ent.inode)));
-        } else {
-            _ = c.fprintf(out, " inode=\"%ld\"", @as(c_long, @intCast(ent.inode)));
-        }
-    }
-
-    if (flag.dev) _ = c.fprintf(out, " dev=\"%d\"", @as(c_int, @intCast(ent.dev)));
+fn xml_fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
+    if (flag.inode) w.print(" inode=\"{d}\"", .{ent.inode}) catch {};
+    if (flag.dev) w.print(" dev=\"{d}\"", .{ent.dev}) catch {};
     if (flag.p) {
         const mask: c.mode_t = c.S_IRWXU | c.S_IRWXG | c.S_IRWXO | c.S_ISUID | c.S_ISGID | c.S_ISVTX;
-        _ = c.fprintf(out, " mode=\"%04o\" prot=\"%s\"", @as(c_uint, @intCast(ent.mode & @as(@TypeOf(ent.mode), @intCast(mask)))), prot(@intCast(ent.mode)));
+        w.print(" mode=\"{o:0>4}\" prot=\"{s}\"", .{
+            ent.mode & @as(@TypeOf(ent.mode), @intCast(mask)),
+            std.mem.span(prot(@intCast(ent.mode))),
+        }) catch {};
     }
-    if (flag.u) _ = c.fprintf(out, " user=\"%s\"", uidtoname(@intCast(ent.uid)));
-    if (flag.g) _ = c.fprintf(out, " group=\"%s\"", gidtoname(@intCast(ent.gid)));
-    if (flag.s) _ = c.fprintf(out, " size=\"%lld\"", @as(c_longlong, @intCast(ent.size)));
-    if (flag.D) _ = c.fprintf(out, " time=\"%s\"", do_date(@intCast(if (flag.c) ent.ctime else ent.mtime)));
+    if (flag.u) w.print(" user=\"{s}\"", .{std.mem.span(uidtoname(@intCast(ent.uid)))}) catch {};
+    if (flag.g) w.print(" group=\"{s}\"", .{std.mem.span(gidtoname(@intCast(ent.gid)))}) catch {};
+    if (flag.s) w.print(" size=\"{d}\"", .{ent.size}) catch {};
+    if (flag.D) w.print(" time=\"{s}\"", .{std.mem.span(do_date(@intCast(if (flag.c) ent.ctime else ent.mtime)))}) catch {};
 }
 
 export fn xml_intro() void {
-    const out = outfile.?;
-    _ = c.fprintf(out, "<?xml version=\"1.0\"");
-    if (charset != null) _ = c.fprintf(out, " encoding=\"%s\"", charset);
-    _ = c.fprintf(out, "?>%s<tree>%s", _nl, _nl);
+    var buf: [256]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.writeAll("<?xml version=\"1.0\"") catch {};
+    if (charset != null) fw.interface.print(" encoding=\"{s}\"", .{std.mem.span(charset)}) catch {};
+    fw.interface.print("?>{s}<tree>{s}", .{ std.mem.span(_nl), std.mem.span(_nl) }) catch {};
 }
 
 export fn xml_outtro() void {
-    _ = c.fprintf(outfile.?, "</tree>%s", _nl);
+    var buf: [64]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.print("</tree>{s}", .{std.mem.span(_nl)}) catch {};
 }
 
 export fn xml_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
-    if (!flag.noindent) xml_indent(level);
+    var buf: [256]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
+    if (!flag.noindent) xml_indent(&fw.interface, level);
 
     const mt: c.mode_t = if (file) |f| @intCast(f.mode & @as(@TypeOf(f.mode), @intCast(c.S_IFMT))) else 0;
 
@@ -106,7 +110,7 @@ export fn xml_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int
         if (ifmt[t] == mt) break;
     }
     if (file) |f| f.tag = ftype[t];
-    _ = c.fprintf(outfile.?, "<%s", ftype[t]);
+    fw.interface.print("<{s}", .{std.mem.span(ftype[t])}) catch {};
 
     return 0;
 }
@@ -114,36 +118,42 @@ export fn xml_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int
 export fn xml_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     _ = dirname;
     _ = descend;
-    const out = outfile.?;
 
-    _ = c.fprintf(out, " name=\"");
-    html_encode(out, filename);
-    _ = c.fputc('"', out);
+    var buf: [4096]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
+    fw.interface.writeAll(" name=\"") catch {};
+    html_encode(&fw.interface, filename);
+    fw.interface.writeByte('"') catch {};
 
     if (file) |f| {
         if (f.comment != null) {
-            _ = c.fprintf(out, " info=\"");
+            fw.interface.writeAll(" info=\"") catch {};
             var i: usize = 0;
             while (f.comment[i] != null) : (i += 1) {
-                html_encode(out, f.comment[i]);
-                if (f.comment[i + 1] != null) _ = c.fprintf(out, "%s", _nl);
+                html_encode(&fw.interface, f.comment[i]);
+                if (f.comment[i + 1] != null) fw.interface.writeAll(std.mem.span(_nl)) catch {};
             }
-            _ = c.fputc('"', out);
+            fw.interface.writeByte('"') catch {};
         }
         if (f.lnk != null) {
-            _ = c.fprintf(out, " target=\"");
-            html_encode(out, f.lnk);
-            _ = c.fputc('"', out);
+            fw.interface.writeAll(" target=\"") catch {};
+            html_encode(&fw.interface, f.lnk);
+            fw.interface.writeByte('"') catch {};
         }
-        xml_fillinfo(f);
+        xml_fillinfo(&fw.interface, f);
     }
-    _ = c.fputc('>', out);
+    fw.interface.writeByte('>') catch {};
 
     return 1;
 }
 
 export fn xml_error(err: [*c]u8) c_int {
-    _ = c.fprintf(outfile.?, "<error>%s</error>", err);
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.print("<error>{s}</error>", .{std.mem.span(err)}) catch {};
     return 0;
 }
 
@@ -151,33 +161,46 @@ export fn xml_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomm
     _ = file;
     _ = level;
     _ = needcomma;
-    if (postdir >= 0) _ = c.fprintf(outfile.?, "%s", _nl);
+    if (postdir >= 0) {
+        var buf: [16]u8 = undefined;
+        var fw = outfile.writer(&buf);
+        defer fw.interface.flush() catch {};
+        fw.interface.writeAll(std.mem.span(_nl)) catch {};
+    }
 }
 
 export fn xml_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = needcomma;
-    if (!flag.noindent and level >= 0) xml_indent(level);
 
-    const tag: [*c]const u8 = if (file) |f| f.tag else "unknown";
-    const trailer: [*c]const u8 = if (flag.noindent) "" else _nl;
-    _ = c.fprintf(outfile.?, "</%s>%s", tag, trailer);
+    var buf: [256]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
+    if (!flag.noindent and level >= 0) xml_indent(&fw.interface, level);
+
+    const tag: []const u8 = if (file) |f| std.mem.span(f.tag) else "unknown";
+    const trailer: []const u8 = if (flag.noindent) "" else std.mem.span(_nl);
+    fw.interface.print("</{s}>{s}", .{ tag, trailer }) catch {};
 }
 
 export fn xml_report(tot: types.Totals) void {
-    const out = outfile.?;
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    const nl = std.mem.span(_nl);
 
-    xml_indent(0);
-    _ = c.fprintf(out, "<report>%s", _nl);
+    xml_indent(&fw.interface, 0);
+    fw.interface.print("<report>{s}", .{nl}) catch {};
     if (flag.du) {
-        xml_indent(1);
-        _ = c.fprintf(out, "<size>%lld</size>%s", @as(c_longlong, @intCast(tot.size)), _nl);
+        xml_indent(&fw.interface, 1);
+        fw.interface.print("<size>{d}</size>{s}", .{ tot.size, nl }) catch {};
     }
-    xml_indent(1);
-    _ = c.fprintf(out, "<directories>%ld</directories>%s", @as(c_long, @intCast(tot.dirs)), _nl);
+    xml_indent(&fw.interface, 1);
+    fw.interface.print("<directories>{d}</directories>{s}", .{ tot.dirs, nl }) catch {};
     if (!flag.d) {
-        xml_indent(1);
-        _ = c.fprintf(out, "<files>%ld</files>%s", @as(c_long, @intCast(tot.files)), _nl);
+        xml_indent(&fw.interface, 1);
+        fw.interface.print("<files>{d}</files>{s}", .{ tot.files, nl }) catch {};
     }
-    xml_indent(0);
-    _ = c.fprintf(out, "</report>%s", _nl);
+    xml_indent(&fw.interface, 0);
+    fw.interface.print("</report>{s}", .{nl}) catch {};
 }

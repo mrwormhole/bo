@@ -1,5 +1,6 @@
 //! Color and charset support ported from color.c.
 
+const std = @import("std");
 const builtin = @import("builtin");
 
 const c = @cImport({
@@ -9,7 +10,6 @@ const c = @cImport({
 const types = @import("types.zig");
 
 extern var flag: types.Flags;
-extern var outfile: ?*c.FILE;
 extern var charset: [*c]const u8;
 
 extern fn xmalloc(size: usize) *anyopaque;
@@ -327,7 +327,7 @@ fn cmd(s: [*c]u8) c_int {
     return ERROR;
 }
 
-export fn parse_dir_colors() void {
+pub fn parse_dir_colors() void {
     var arg: [*c][*c]u8 = undefined;
     var c_ptr: [*c][*c]u8 = undefined;
     var colors: [*c]u8 = undefined;
@@ -441,99 +441,98 @@ export fn parse_dir_colors() void {
     c.free(@as(?*anyopaque, @ptrCast(colors)));
 }
 
-fn print_color(col: c_int) bool {
+fn print_color(w: *std.Io.Writer, col: c_int) bool {
     const color_u = @as(usize, @intCast(col));
     if (color_code[color_u] == null) return false;
-
-    _ = c.fputs(color_code[@as(usize, @intCast(COL_LEFTCODE))], outfile);
-    _ = c.fputs(color_code[color_u], outfile);
-    _ = c.fputs(color_code[@as(usize, @intCast(COL_RIGHTCODE))], outfile);
+    if (color_code[@as(usize, @intCast(COL_LEFTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
+    if (color_code[color_u]) |p| w.writeAll(std.mem.span(p)) catch {};
+    if (color_code[@as(usize, @intCast(COL_RIGHTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
     return true;
 }
 
-export fn endcolor() void {
-    if (color_code[@as(usize, @intCast(COL_ENDCODE))] != null) {
-        _ = c.fputs(color_code[@as(usize, @intCast(COL_ENDCODE))], outfile);
+pub fn endcolor(w: *std.Io.Writer) void {
+    if (color_code[@as(usize, @intCast(COL_ENDCODE))]) |p| {
+        w.writeAll(std.mem.span(p)) catch {};
     }
 }
 
-export fn fancy(out: ?*c.FILE, s_in: [*c]u8) void {
+pub export fn fancy(w: *std.Io.Writer, s_in: [*c]u8) void {
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         switch (s[0]) {
             '\x08' => {
-                if (flag.colorize and color_code[@as(usize, @intCast(COL_BOLD))] != null)
-                    _ = c.fputs(color_code[@as(usize, @intCast(COL_BOLD))], out);
+                if (flag.colorize) if (color_code[@as(usize, @intCast(COL_BOLD))]) |p|
+                    w.writeAll(std.mem.span(p)) catch {};
             },
             '\x0C' => {
-                if (flag.colorize and color_code[@as(usize, @intCast(COL_ITALIC))] != null)
-                    _ = c.fputs(color_code[@as(usize, @intCast(COL_ITALIC))], out);
+                if (flag.colorize) if (color_code[@as(usize, @intCast(COL_ITALIC))]) |p|
+                    w.writeAll(std.mem.span(p)) catch {};
             },
             '\r' => {
-                if (flag.colorize and color_code[@as(usize, @intCast(COL_ENDCODE))] != null)
-                    _ = c.fputs(color_code[@as(usize, @intCast(COL_ENDCODE))], out);
+                if (flag.colorize) if (color_code[@as(usize, @intCast(COL_ENDCODE))]) |p|
+                    w.writeAll(std.mem.span(p)) catch {};
             },
-            else => _ = c.fputc(@as(c_int, s[0]), out),
+            else => w.writeByte(s[0]) catch {},
         }
     }
 }
 
-export fn color(mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool {
+pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool {
     var e: ?*types.Extensions = ext;
     var l: usize = 0;
     var xl: usize = 0;
 
     if (orphan) {
         if (islink) {
-            if (print_color(COL_MISSING)) return true;
+            if (print_color(w, COL_MISSING)) return true;
         } else {
-            if (print_color(COL_ORPHAN)) return true;
+            if (print_color(w, COL_ORPHAN)) return true;
         }
     }
 
     // It's probably safe to assume short-circuit evaluation, but we'll do it this way:
-    switch (mode & c.S_IFMT) {
-        c.S_IFIFO => return print_color(COL_FIFO),
-        c.S_IFCHR => return print_color(COL_CHR),
-        c.S_IFDIR => {
-            if ((mode & c.S_ISVTX) != 0) {
-                if ((mode & c.S_IWOTH) != 0) {
-                    if (print_color(COL_STICKY_OTHER_WRITABLE)) return true;
+    switch (mode & std.posix.S.IFMT) {
+        std.posix.S.IFIFO => return print_color(w, COL_FIFO),
+        std.posix.S.IFCHR => return print_color(w, COL_CHR),
+        std.posix.S.IFDIR => {
+            if ((mode & std.posix.S.ISVTX) != 0) {
+                if ((mode & std.posix.S.IWOTH) != 0) {
+                    if (print_color(w, COL_STICKY_OTHER_WRITABLE)) return true;
                 }
-                if ((mode & c.S_IWOTH) == 0) {
-                    if (print_color(COL_STICKY)) return true;
+                if ((mode & std.posix.S.IWOTH) == 0) {
+                    if (print_color(w, COL_STICKY)) return true;
                 }
             }
-            if ((mode & c.S_IWOTH) != 0) {
-                if (print_color(COL_OTHER_WRITABLE)) return true;
+            if ((mode & std.posix.S.IWOTH) != 0) {
+                if (print_color(w, COL_OTHER_WRITABLE)) return true;
             }
-            return print_color(COL_DIR);
+            return print_color(w, COL_DIR);
         },
-        c.S_IFBLK => return print_color(COL_BLK),
-        c.S_IFLNK => return print_color(COL_LINK),
+        std.posix.S.IFBLK => return print_color(w, COL_BLK),
+        std.posix.S.IFLNK => return print_color(w, COL_LINK),
         else => {},
     }
 
     // S_IFDOOR is only defined on Solaris/illumos
     if (@hasDecl(c, "S_IFDOOR")) {
-        if ((mode & c.S_IFMT) == c.S_IFDOOR) {
-            return print_color(COL_DOOR);
+        if ((mode & std.posix.S.IFMT) == c.S_IFDOOR) {
+            return print_color(w, COL_DOOR);
         }
     }
 
-    if ((mode & c.S_IFMT) == c.S_IFSOCK) {
-        return print_color(COL_SOCK);
+    if ((mode & std.posix.S.IFMT) == c.S_IFSOCK) {
+        return print_color(w, COL_SOCK);
     }
 
-    if ((mode & c.S_IFMT) == c.S_IFREG) {
-        if ((mode & c.S_ISUID) != 0) {
-            if (print_color(COL_SETUID)) return true;
+    if ((mode & std.posix.S.IFMT) == c.S_IFREG) {
+        if ((mode & std.posix.S.ISUID) != 0) {
+            if (print_color(w, COL_SETUID)) return true;
         }
-        if ((mode & c.S_ISGID) != 0) {
-            if (print_color(COL_SETGID)) return true;
+        if ((mode & std.posix.S.ISGID) != 0) {
+            if (print_color(w, COL_SETGID)) return true;
         }
-        if ((mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0) {
-            if (print_color(COL_EXEC)) return true;
+        if ((mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH)) != 0) {
+            if (print_color(w, COL_EXEC)) return true;
         }
 
         // not a directory, link, special device, etc, so check for extension match
@@ -542,17 +541,17 @@ export fn color(mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) 
             xl = c.strlen(e.?.ext);
             const name_ptr: [*c]const u8 = if (l > xl) name + (l - xl) else name;
             if (c.strcmp(name_ptr, e.?.ext) == 0) {
-                _ = c.fputs(color_code[@as(usize, @intCast(COL_LEFTCODE))], outfile);
-                _ = c.fputs(e.?.term_flg, outfile);
-                _ = c.fputs(color_code[@as(usize, @intCast(COL_RIGHTCODE))], outfile);
+                if (color_code[@as(usize, @intCast(COL_LEFTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
+                if (e.?.term_flg) |p| w.writeAll(std.mem.span(p)) catch {};
+                if (color_code[@as(usize, @intCast(COL_RIGHTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
                 return true;
             }
         }
         // colorize just normal files too
-        return print_color(COL_FILE);
+        return print_color(w, COL_FILE);
     }
 
-    return print_color(COL_NORMAL);
+    return print_color(w, COL_NORMAL);
 }
 
 // Static buffer for getcharset() — mirrors C's `static char buffer[256]`.
@@ -568,7 +567,7 @@ export fn getcharset() [*c]const u8 {
     return null;
 }
 
-export fn initlinedraw(help: bool) void {
+pub fn initlinedraw(help: bool) void {
     if (help) {
         var i: usize = 0;
         _ = c.fprintf(cStderr(), "Valid charsets include:\n");

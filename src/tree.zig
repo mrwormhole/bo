@@ -11,6 +11,9 @@ const stat = @import("stat.zig");
 const pat = @import("pattern.zig");
 const types = @import("types.zig");
 const strverscmp = @import("strverscmp.zig").strverscmp;
+const parse_dir_colors = @import("color.zig").parse_dir_colors;
+const initlinedraw = @import("color.zig").initlinedraw;
+const fancy = @import("color.zig").fancy;
 
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
@@ -55,24 +58,21 @@ extern fn pop_infostack() ?*types.InfoFile;
 extern fn new_infofile(dir: [*c]const u8, top: bool) ?*types.InfoFile;
 
 // color.zig
-extern fn initlinedraw(force: bool) void;
-extern fn parse_dir_colors() void;
+//extern fn initlinedraw(force: bool) void;
+// extern fn parse_dir_colors() void;
 extern fn getcharset() [*c]const u8;
-extern fn fancy(out: ?*c.FILE, s: [*c]u8) void;
+//extern fn fancy(out: ?*c.FILE, s: [*c]u8) void; // uses its own FILE* (stderr/stdout), not outfile
 
 // list.zig
-extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
+// extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
+const emit_tree = @import("list.zig").emit_tree;
 
 // file.zig
 extern fn file_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
 extern fn tabedfile_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
 
 // unix.zig
-extern fn unix_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
-extern fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
-extern fn unix_error(err: [*c]u8) c_int;
-extern fn unix_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
-extern fn unix_report(tot: types.Totals) void;
+const unix = @import("unix.zig");
 
 // json.zig
 extern fn json_intro() void;
@@ -136,7 +136,8 @@ export var topsort: ?*const SortFn = null;
 
 var sLevel: [*c]u8 = null;
 
-export var outfile: ?*c.FILE = null;
+var _outfile: std.fs.File = undefined;
+export var outfile: *std.fs.File = &_outfile;
 export var dirs: [*c]c_int = null;
 export var Level: isize = 0;
 export var maxdirs: usize = 0;
@@ -272,16 +273,16 @@ export fn do_date(t: c.time_t) [*c]u8 {
 }
 
 // Must fix this someday
-export fn printit(s: [*c]const u8) void {
+export fn printit(w: *std.Io.Writer, s: [*c]const u8) void {
     if (flag.N) {
-        if (flag.Q) _ = c.fprintf(outfile, "\"%s\"", s) else _ = c.fprintf(outfile, "%s", s);
+        if (flag.Q) w.print("\"{s}\"", .{std.mem.span(s)}) catch {} else w.writeAll(std.mem.span(s)) catch {};
         return;
     }
     if (mb_cur_max > 1) {
         const cs: usize = c.strlen(s) + 1;
         const ws: [*c]c.wchar_t = @ptrCast(@alignCast(xmalloc(@sizeOf(c.wchar_t) * cs)));
         if (c.mbstowcs(ws, s, cs) != @as(usize, @bitCast(@as(isize, -1)))) {
-            if (flag.Q) _ = c.putc('"', outfile);
+            if (flag.Q) w.writeByte('"') catch {};
             var remaining: usize = cs;
             var tp: [*c]c.wchar_t = ws;
             while (tp[0] != 0 and remaining > 1) : ({
@@ -289,35 +290,45 @@ export fn printit(s: [*c]const u8) void {
                 remaining -= 1;
             }) {
                 if (c.iswprint(@intCast(tp[0])) != 0) {
-                    _ = c.fprintf(outfile, "%lc", @as(c.wint_t, @intCast(tp[0])));
+                    const wc: u32 = @bitCast(tp[0]);
+                    if (wc <= 0x10FFFF) {
+                        var utf8buf: [4]u8 = undefined;
+                        if (std.unicode.utf8Encode(@intCast(wc), &utf8buf)) |len| {
+                            w.writeAll(utf8buf[0..len]) catch {};
+                        } else |_| {
+                            w.writeByte('?') catch {};
+                        }
+                    } else {
+                        w.writeByte('?') catch {};
+                    }
                 } else {
-                    if (flag.q) _ = c.putc('?', outfile) else _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @intCast(@as(i64, tp[0]))));
+                    if (flag.q) w.writeByte('?') catch {} else w.print("\\{o:0>3}", .{@as(u32, @bitCast(tp[0]))}) catch {};
                 }
             }
-            if (flag.Q) _ = c.putc('"', outfile);
+            if (flag.Q) w.writeByte('"') catch {};
             c.free(ws);
             return;
         }
         c.free(ws);
     }
-    if (flag.Q) _ = c.putc('"', outfile);
+    if (flag.Q) w.writeByte('"') catch {};
     var sp2: [*c]const u8 = s;
     while (sp2[0] != 0) : (sp2 += 1) {
         const ch: c_int = @intCast(sp2[0]);
         if ((ch >= 7 and ch <= 13) or ch == '\\' or (ch == '"' and flag.Q) or (ch == ' ' and !flag.Q)) {
-            _ = c.putc('\\', outfile);
-            if (ch > 13) _ = c.putc(ch, outfile) else _ = c.putc("abtnvfr"[@intCast(ch - 7)], outfile);
+            w.writeByte('\\') catch {};
+            if (ch > 13) w.writeByte(@intCast(ch)) catch {} else w.writeByte("abtnvfr"[@intCast(ch - 7)]) catch {};
         } else if (c.isprint(ch) != 0) {
-            _ = c.putc(ch, outfile);
+            w.writeByte(@intCast(ch)) catch {};
         } else {
             if (flag.q) {
-                if (mb_cur_max > 1 and ch > 127) _ = c.putc(ch, outfile) else _ = c.putc('?', outfile);
+                if (mb_cur_max > 1 and ch > 127) w.writeByte(@intCast(ch)) catch {} else w.writeByte('?') catch {};
             } else {
-                _ = c.fprintf(outfile, "\\%03o", @as(c_uint, @intCast(ch)));
+                w.print("\\{o:0>3}", .{@as(c_uint, @intCast(ch))}) catch {};
             }
         }
     }
-    if (flag.Q) _ = c.putc('"', outfile);
+    if (flag.Q) w.writeByte('"') catch {};
 }
 
 export fn psize(buf: [*c]u8, size: c.off_t) c_int {
@@ -393,23 +404,23 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8 {
     return buf;
 }
 
-export fn indent(maxlevel: c_int) void {
-    const spaces = [3][*c]const u8{ "   ", "  ", " " };
-    const htmlspaces = [3][*c]const u8{ "&nbsp;&nbsp;&nbsp;", "&nbsp;&nbsp;", "&nbsp;" };
-    const space: [*c]const u8 = if (flag.H) "&nbsp;" else " ";
+export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
+    const spaces = [3][]const u8{ "   ", "  ", " " };
+    const htmlspaces = [3][]const u8{ "&nbsp;&nbsp;&nbsp;", "&nbsp;&nbsp;", "&nbsp;" };
+    const space: []const u8 = if (flag.H) "&nbsp;" else " ";
     const clvl: usize = @intCast(flag.compress_indent);
 
-    if (flag.H) _ = c.fprintf(outfile, "\t");
+    if (flag.H) w.writeByte('\t') catch {};
     var i: c_int = 1;
     while (i <= maxlevel and dirs[@intCast(i)] != 0) : (i += 1) {
         const has_next: bool = dirs[@intCast(i + 1)] != 0;
         const bar_here: bool = dirs[@intCast(i)] == 1;
-        const seg: [*c]const u8 = if (has_next)
-            (if (bar_here) linedraw.*.vert[clvl] else (if (flag.H) htmlspaces[clvl] else spaces[clvl]))
+        const seg: []const u8 = if (has_next)
+            (if (bar_here) std.mem.span(linedraw.*.vert[clvl]) else (if (flag.H) htmlspaces[clvl] else spaces[clvl]))
         else
-            (if (bar_here) linedraw.*.vert_left[clvl] else linedraw.*.corner[clvl]);
-        _ = c.fprintf(outfile, "%s", seg);
-        if (flag.remove_space != true) _ = c.fprintf(outfile, "%s", space);
+            (if (bar_here) std.mem.span(linedraw.*.vert_left[clvl]) else std.mem.span(linedraw.*.corner[clvl]));
+        w.writeAll(seg) catch {};
+        if (flag.remove_space != true) w.writeAll(space) catch {};
     }
 }
 
@@ -946,23 +957,14 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
     return ret;
 }
 
-export fn setoutput(filename: [*c]const u8) void {
-    if (filename == null) {
-        if (outfile == null) outfile = cStdout();
-    } else {
-        outfile = c.fopen(filename, "w");
-        if (outfile == null) {
-            _ = c.fprintf(cStderr(), "tree: invalid filename '%s'\n", filename);
-            c.exit(c.EXIT_FAILURE);
-        }
-    }
-}
-
 fn print_usage() void {
     parse_dir_colors();
     initlinedraw(false);
+    var ubuf: [1024]u8 = undefined;
+    var ufw = std.fs.File.stderr().writer(&ubuf);
+    defer ufw.interface.flush() catch {};
 
-    fancy(cStderr(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+    fancy(&ufw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -978,8 +980,11 @@ fn print_usage() void {
 fn print_help() void {
     parse_dir_colors();
     initlinedraw(false);
+    var hbuf: [4096]u8 = undefined;
+    var hfw = std.fs.File.stdout().writer(&hbuf);
+    defer hfw.interface.flush() catch {};
 
-    fancy(cStdout(), @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
+    fancy(&hfw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
         "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
         "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
         "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
@@ -991,7 +996,7 @@ fn print_help() void {
         (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
         "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
 
-    fancy(cStdout(), @constCast("  \x08------- Listing options -------\r\n" ++
+    fancy(&hfw.interface, @constCast("  \x08------- Listing options -------\r\n" ++
         "  \x08-a\r            All files are listed.\n" ++
         "  \x08-d\r            List directories only.\n" ++
         "  \x08-l\r            Follow symbolic links like directories.\n" ++
@@ -1036,7 +1041,7 @@ fn print_help() void {
         else
             "")));
 
-    fancy(cStdout(), @constCast("  \x08------- Sorting options -------\r\n" ++
+    fancy(&hfw.interface, @constCast("  \x08------- Sorting options -------\r\n" ++
         "  \x08-v\r            Sort files alphanumerically by version.\n" ++
         "  \x08-t\r            Sort files by last modification time.\n" ++
         "  \x08-c\r            Sort files by last status change time.\n" ++
@@ -1075,6 +1080,7 @@ fn print_help() void {
 }
 
 pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
+    _outfile = std.fs.File.stdout();
     var dirname: [*c][*c]u8 = null;
 
     var patterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
@@ -1116,19 +1122,19 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     }
 
     const noop = struct {
-        fn noop() callconv(.c) void {}
-        fn close(_: ?*types.Info, _: c_int, _: c_int) callconv(.c) void {}
+        fn noop() void {}
+        fn close(_: ?*types.Info, _: c_int, _: c_int) void {}
     };
 
     lc = types.ListingCalls{
         .intro = &noop.noop,
         .outtro = &noop.noop,
-        .printinfo = &unix_printinfo,
-        .printfile = &unix_printfile,
-        .@"error" = &unix_error,
-        .newline = &unix_newline,
+        .printinfo = &unix.printinfo,
+        .printfile = &unix.printfile,
+        .@"error" = &unix.printerror,
+        .newline = &unix.newline,
         .close = &noop.close,
-        .report = &unix_report,
+        .report = &unix.report,
     };
 
     mb_cur_max = getMbCurMax();
@@ -1152,7 +1158,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                     .close = &json_close,
                     .report = &json_report,
                 };
-                outfile = c.fdopen(std_fd, "w");
+                _outfile = .{ .handle = @intCast(std_fd) };
             }
         }
     }
@@ -1576,13 +1582,23 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     ipatterns = ipatterns_list.items.ptr;
     ipattern = @intCast(ipatterns_list.items.len);
 
-    setoutput(outfilename);
+    if (outfilename != null) {
+        const name = std.mem.span(@as([*:0]const u8, @ptrCast(outfilename.?)));
+        _outfile = std.fs.cwd().createFile(name, .{}) catch {
+            _ = c.fprintf(cStderr(), "tree: invalid filename '%s'\n", outfilename);
+            c.exit(c.EXIT_FAILURE);
+            unreachable;
+        };
+    }
 
     parse_dir_colors();
     initlinedraw(false);
 
     if (showversion) {
-        _ = c.fprintf(outfile, "%s\n", version);
+        var vbuf: [256]u8 = undefined;
+        var vfw = outfile.writer(&vbuf);
+        vfw.interface.print("{s}\n", .{std.mem.span(version)}) catch {};
+        vfw.interface.flush() catch {};
         c.exit(c.EXIT_SUCCESS);
     }
 
@@ -1612,9 +1628,9 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;
 
-    emit_tree(dirname, needfulltree);
+    emit_tree(lc, dirname, needfulltree);
 
-    if (outfilename != null) _ = c.fclose(outfile);
+    if (outfilename != null) outfile.close();
 
     return if (errors != 0) 2 else 0;
 }

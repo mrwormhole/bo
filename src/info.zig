@@ -17,7 +17,6 @@ const c = @cImport({
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 
-extern var outfile: ?*c.FILE;
 extern var linedraw: [*c]const types.LineDraw;
 extern var xpattern: [c.PATH_MAX]u8;
 
@@ -197,17 +196,14 @@ export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir
     return null;
 }
 
-export fn printcomment(line: usize, lines: usize, s: [*c]u8) void {
-    if (lines == 1) {
-        _ = c.fprintf(outfile, "%s ", linedraw.*.csingle);
-    } else if (line == 0) {
-        _ = c.fprintf(outfile, "%s ", linedraw.*.ctop);
-    } else if (line < 2) {
-        const drw: [*c]const u8 = if (lines == 2) linedraw.*.cbot else linedraw.*.cmid;
-        _ = c.fprintf(outfile, "%s ", drw);
-    } else {
-        const drw: [*c]const u8 = if (line == lines - 1) linedraw.*.cbot else linedraw.*.cext;
-        _ = c.fprintf(outfile, "%s ", drw);
-    }
-    _ = c.fprintf(outfile, "%s\n", s);
+export fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) void {
+    const drw: [*c]const u8 = if (lines == 1)
+        linedraw.*.csingle
+    else if (line == 0)
+        linedraw.*.ctop
+    else if (line < 2)
+        (if (lines == 2) linedraw.*.cbot else linedraw.*.cmid)
+    else
+        (if (line == lines - 1) linedraw.*.cbot else linedraw.*.cext);
+    w.print("{s} {s}\n", .{ std.mem.span(drw), std.mem.span(s) }) catch {};
 }
