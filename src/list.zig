@@ -8,7 +8,6 @@ const c = @cImport({
 });
 
 const types = @import("types.zig");
-const stat = @import("stat.zig");
 const hash = @import("hash.zig");
 const html = @import("html.zig");
 const util = @import("util.zig");
@@ -68,7 +67,7 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
 }
 
 extern var flag: types.Flags;
-extern var getfulltree: ?*const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
+extern var getfulltree: *const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
 extern var topsort: ?*const fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
 extern var outfile: *std.fs.File;
@@ -140,7 +139,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
             info.*.name = @constCast(""); //dirname[i];
 
             if (needfulltree) {
-                dir = getfulltree.?(dirname[i], 0, st_dev, &info.*.size, &err);
+                dir = getfulltree(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
             } else {
                 push_files(dirname[i], &ig, &inf, true);

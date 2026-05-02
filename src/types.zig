@@ -3,6 +3,7 @@ const builtin = @import("builtin");
 const posix = std.posix;
 
 pub const Flags = extern struct {
+    // TODO: Change these single letter flags to more meaningful names
     a: bool,
     c: bool,
     d: bool,

@@ -283,7 +283,7 @@ pub fn file_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
-    size: [*c]c.off_t,
+    size: *c.off_t,
     err: [*c][*c]u8,
 ) callconv(.c) [*c][*c]types.Info {
     _ = lev;
@@ -365,7 +365,7 @@ pub fn tabedfile_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
-    size: [*c]c.off_t,
+    size: *c.off_t,
     err: [*c][*c]u8,
 ) callconv(.c) [*c][*c]types.Info {
     _ = lev;

@@ -7,7 +7,6 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-const stat = @import("stat.zig");
 const pat = @import("pattern.zig");
 const types = @import("types.zig");
 const strverscmp = @import("strverscmp.zig").strverscmp;
@@ -23,12 +22,6 @@ const util = @import("util.zig");
 const hash = @import("hash.zig");
 const help = @import("help.zig");
 const linux = @import("linux.zig");
-
-// ---------------------------------------------------------------------------
-// Function-type aliases matching the C typedefs in tree.h
-// ---------------------------------------------------------------------------
-const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
-const SortFn = fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
 // ---------------------------------------------------------------------------
 // Extern from color.zig
@@ -73,7 +66,10 @@ export var file_pathsep: [*c]u8 = @constCast("/");
 export var timefmt: [*c]u8 = null;
 export var charset: [*c]const u8 = null;
 
-export var getfulltree: ?*const GetFullTreeFn = &unix_getfulltree;
+const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, *c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
+const SortFn = fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
+
+export var getfulltree: *const GetFullTreeFn = &unix_getfulltree;
 export var basesort: ?*const SortFn = &alnumsort;
 export var topsort: ?*const SortFn = null;
 

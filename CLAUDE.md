@@ -53,7 +53,7 @@ const c = @cImport({ @cInclude("tree.h"); });
 
 ### Linux struct_timespec workaround
 
-musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes to an opaque type, making `c.struct_stat` unusable from Zig on Linux. `src/stat.zig` isolates the Linux `std.os.linux.fstatat` wrapper, and callers fill `types.Info` fields manually from `std.os.linux.Stat`.
+musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes to an opaque type, making `c.struct_stat` unusable from Zig on Linux. `src/linux.zig` isolates the Linux `std.os.linux.fstatat` wrapper, and callers fill `types.Info` fields manually from `std.os.linux.Stat`.
 
 ### Key source files
 
