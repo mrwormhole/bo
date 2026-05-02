@@ -269,6 +269,31 @@ inline fn cStderr() ?*c.FILE {
 }
 
 // Hacked in DIR_COLORS support for linux. ------------------------------
+//
+//  If someone asked me, I'd extend dircolors, to provide more generic
+// color support so that more programs could take advantage of it.  This
+// is really just hacked in support.  The dircolors program should:
+// 1) Put the valid terms in a environment var, like:
+//    COLOR_TERMS=linux:console:xterm:vt100...
+// 2) Put the COLOR and OPTIONS directives in a env var too.
+// 3) Have an option to dircolors to silently ignore directives that it
+//    doesn't understand (directives that other programs would
+//    understand).
+// 4) Perhaps even make those unknown directives environment variables.
+//
+// The environment is the place for cryptic crap no one looks at, but
+// programs.  No one is going to care if it takes 30 variables to do
+// something.
+
+//
+// char *vgacolor[] = {
+//   "black", "red", "green", "yellow", "blue", "fuchsia", "aqua", "white",
+//   NULL, NULL,
+//   "transparent", "red", "green", "yellow", "blue", "fuchsia", "aqua", "black"
+// };
+// struct colortable {
+//   char *term_flg, *CSS_name, *font_fg, *font_bg;
+// } colortable[11];
 
 fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     var n: usize = 128;

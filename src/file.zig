@@ -337,9 +337,9 @@ pub fn file_getfulltree(
                     // Might be empty, but should definitely be considered a directory:
                     if (ftok == .T_DIR) {
                         ent[0].isdir = true;
-                        ent[0].mode = @intCast(c.S_IFDIR);
+                        ent[0].mode = @intCast(std.posix.S.IFDIR);
                     } else {
-                        ent[0].mode = @intCast(c.S_IFREG);
+                        ent[0].mode = @intCast(std.posix.S.IFREG);
                     }
                     cwd_ptr = &(ent[0].tchild);
                 },
@@ -350,7 +350,7 @@ pub fn file_getfulltree(
 
         if (ent != null and link != null) {
             ent[0].isdir = false;
-            ent[0].mode = @intCast(c.S_IFLNK);
+            ent[0].mode = @intCast(std.posix.S.IFLNK);
             ent[0].lnk = util.scopy(link + 4);
         }
     }
@@ -430,16 +430,16 @@ pub fn tabedfile_getfulltree(
         const dir_ptr: *[*c]types.Info = if (tabs != 0) &(istack[tabs - 1][0].tchild) else &root;
         const ent: [*c]types.Info = search(dir_ptr, spath);
         istack[tabs] = ent;
-        ent[0].mode = @intCast(c.S_IFREG);
+        ent[0].mode = @intCast(std.posix.S.IFREG);
 
         if (tabs > 0) {
             istack[tabs - 1][0].isdir = true;
-            istack[tabs - 1][0].mode = @intCast(c.S_IFDIR);
+            istack[tabs - 1][0].mode = @intCast(std.posix.S.IFDIR);
         }
 
         if (link != null) {
             ent[0].isdir = false;
-            ent[0].mode = @intCast(c.S_IFLNK);
+            ent[0].mode = @intCast(std.posix.S.IFLNK);
             ent[0].lnk = util.scopy(link + 4);
         }
         top = tabs;
