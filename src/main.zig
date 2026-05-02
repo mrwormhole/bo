@@ -11,7 +11,7 @@ pub fn printStdout(content: []const u8) !void {
     try stdout.flush();
 }
 
-pub fn main() !u8 {
+pub fn main() !void {
     const allocator = std.heap.c_allocator;
 
     const args = try std.process.argsAlloc(allocator);
@@ -19,17 +19,8 @@ pub fn main() !u8 {
 
     if (args.len == 2 and std.mem.eql(u8, args[1], "man")) {
         try printStdout(man.content);
-        return 0;
+        return;
     }
 
-    // Otherwise call C, must convert [:0]const u8 slice to [*:0]u8 for C
-    var c_args = try allocator.alloc([*:0]u8, args.len);
-    defer allocator.free(c_args);
-
-    for (args, 0..) |arg, i| {
-        c_args[i] = arg.ptr;
-    }
-
-    const result = tree.run(allocator, @intCast(args.len), @ptrCast(c_args.ptr));
-    return if (result >= 0) @intCast(result) else 1;
+    try tree.run(allocator, args);
 }

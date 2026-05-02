@@ -6,98 +6,123 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
-extern var outfile: ?*c.FILE;
+const types = @import("types.zig");
+const html = @import("html.zig");
+const info = @import("info.zig");
+extern var flag: types.Flags;
+extern var outfile: *std.fs.File;
 extern var dirs: [*c]c_int;
 
 extern var scheme: [*c]u8;
 extern var authority: [*c]u8;
 
-// Persists across calls: written by unix_printinfo, re-read by unix_newline
+extern fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8;
+extern fn indent(w: *std.Io.Writer, maxlevel: c_int) void;
+extern fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void;
+extern fn printit(w: *std.Io.Writer, s: [*c]const u8) void;
+extern fn Ftype(mode: c.mode_t) u8;
+extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
+
+const colorize = @import("color.zig").colorize;
+const endcolor = @import("color.zig").endcolor;
+
+// Persists across calls: written by printinfo, re-read by newline
 // when computing metafirst comment indentation.
 var info_buf: [512]u8 = std.mem.zeroes([512]u8);
 
-export fn unix_printinfo(dirname: [*c]u8, file: ?*c.struct__info, level: c_int) c_int {
+pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
-    _ = c.fillinfo(&info_buf, file);
+    _ = fillinfo(&info_buf, file);
+    var buf: [1024]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
     if (flag.metafirst) {
-        if (info_buf[0] == '[') _ = c.fprintf(outfile, "%s  ", &info_buf);
-        if (!flag.noindent) c.indent(level);
+        if (info_buf[0] == '[') fw.interface.print("{s}  ", .{std.mem.sliceTo(&info_buf, 0)}) catch {};
+        if (!flag.noindent) indent(&fw.interface, level);
     } else {
-        if (!flag.noindent) c.indent(level);
-        if (info_buf[0] == '[') _ = c.fprintf(outfile, "%s  ", &info_buf);
+        if (!flag.noindent) indent(&fw.interface, level);
+        if (info_buf[0] == '[') fw.interface.print("{s}  ", .{std.mem.sliceTo(&info_buf, 0)}) catch {};
     }
     return 0;
 }
 
-fn open_hyperlink(dirname: [*c]u8, filename: [*c]u8) void {
-    const out = outfile.?;
-    _ = c.fprintf(out, "\x1b]8;;%s", scheme);
-    _ = c.url_encode(out, authority);
-    _ = c.fprintf(out, ":");
-    c.emit_hyperlink_path(out, dirname);
-    _ = c.url_encode(out, filename);
-    _ = c.fprintf(out, "\x1b\\");
+fn open_hyperlink(w: *std.Io.Writer, dirname: [*c]u8, filename: [*c]u8) void {
+    w.print("\x1b]8;;{s}", .{std.mem.span(scheme)}) catch {};
+    _ = html.url_encode(w, authority);
+    w.writeByte(':') catch {};
+    emit_hyperlink_path(w, dirname);
+    _ = html.url_encode(w, filename);
+    w.writeAll("\x1b\\") catch {};
 }
 
-fn close_hyperlink() void {
-    _ = c.fprintf(outfile, "\x1b]8;;\x1b\\");
+fn close_hyperlink(w: *std.Io.Writer) void {
+    w.writeAll("\x1b]8;;\x1b\\") catch {};
 }
 
-export fn unix_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__info, descend: c_int) c_int {
+pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     _ = descend;
 
+    var buf: [4096]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
     var colored: bool = false;
 
     if (file) |f| {
-        if (flag.hyper) open_hyperlink(dirname, f.name);
+        if (flag.hyper) open_hyperlink(&fw.interface, dirname, f.name);
 
         if (flag.colorize) {
             if (f.lnk != null and flag.linktargetcolor) {
-                colored = c.color(f.lnkmode, f.name, f.orphan, false);
+                colored = colorize(&fw.interface, @intCast(f.lnkmode), f.name, f.orphan, false);
             } else {
-                colored = c.color(f.mode, f.name, f.orphan, false);
+                colored = colorize(&fw.interface, @intCast(f.mode), f.name, f.orphan, false);
             }
         }
     }
 
-    c.printit(filename);
-    if (colored) c.endcolor();
+    printit(&fw.interface, filename);
+    if (colored) endcolor(&fw.interface);
 
     if (file) |f| {
-        if (flag.hyper) close_hyperlink();
+        if (flag.hyper) close_hyperlink(&fw.interface);
 
         if (flag.F and f.lnk == null) {
-            const ch = c.Ftype(f.mode);
-            if (ch != 0) _ = c.fputc(ch, outfile);
+            const ch = Ftype(@intCast(f.mode));
+            if (ch != 0) fw.interface.writeByte(ch) catch {};
         }
 
         if (f.lnk != null) {
-            _ = c.fprintf(outfile, " -> ");
-            if (flag.hyper) open_hyperlink(dirname, f.name);
-            if (flag.colorize) colored = c.color(f.lnkmode, f.lnk, f.orphan, true);
-            c.printit(f.lnk);
-            if (colored) c.endcolor();
-            if (flag.hyper) close_hyperlink();
+            fw.interface.writeAll(" -> ") catch {};
+            if (flag.hyper) open_hyperlink(&fw.interface, dirname, f.name);
+            if (flag.colorize) colored = colorize(&fw.interface, @intCast(f.lnkmode), f.lnk, f.orphan, true);
+            printit(&fw.interface, f.lnk);
+            if (colored) endcolor(&fw.interface);
+            if (flag.hyper) close_hyperlink(&fw.interface);
             if (flag.F) {
-                const ch = c.Ftype(f.lnkmode);
-                if (ch != 0) _ = c.fputc(ch, outfile);
+                const ch = Ftype(@intCast(f.lnkmode));
+                if (ch != 0) fw.interface.writeByte(ch) catch {};
             }
         }
     }
     return 0;
 }
 
-export fn unix_error(err: [*c]u8) c_int {
-    _ = c.fprintf(outfile, "  [%s]", err);
+pub fn printerror(err: [*c]u8) c_int {
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.print("  [{s}]", .{std.mem.span(err)}) catch {};
     return 0;
 }
 
-export fn unix_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, needcomma: c_int) void {
+pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = needcomma;
 
-    if (postdir <= 0) _ = c.fprintf(outfile, "\n");
+    var buf: [4096]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
+    if (postdir <= 0) fw.interface.writeByte('\n') catch {};
     if (file) |f| {
         if (f.comment == null) return;
 
@@ -112,37 +137,52 @@ export fn unix_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, nee
         var line: usize = 0;
         while (line < lines) : (line += 1) {
             if (flag.metafirst) {
-                _ = c.printf("%*s", @as(c_int, @intCast(infosize)), "");
+                fw.interface.splatByteAll(' ', infosize) catch {};
             }
-            c.indent(level);
-            c.printcomment(line, lines, f.comment[line]);
+            indent(&fw.interface, level);
+            info.printcomment(&fw.interface, line, lines, f.comment[line]);
         }
         dirs[@intCast(level + 1)] = 0;
     }
 }
 
-export fn unix_report(tot: c.struct_totals) void {
-    var buf: [256]u8 = undefined;
+pub fn report(tot: types.Totals) void {
+    var pbuf: [256]u8 = undefined;
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
 
-    _ = c.fputc('\n', outfile);
+    fw.interface.writeByte('\n') catch {};
     if (flag.du) {
-        _ = c.psize(&buf, tot.size);
-        const suffix: [*c]const u8 = if (flag.h or flag.si) "" else " bytes";
-        _ = c.fprintf(outfile, "%s%s used in ", &buf, suffix);
+        _ = psize(&pbuf, @intCast(tot.size));
+        const suffix: []const u8 = if (flag.h or flag.si) "" else " bytes";
+        const sz = std.mem.sliceTo(&pbuf, 0);
+        fw.interface.print("{s}{s} used in ", .{ sz, suffix }) catch {};
     }
     if (flag.d) {
-        const noun: [*c]const u8 = if (tot.dirs == 1) "y" else "ies";
-        _ = c.fprintf(outfile, "%ld director%s\n", @as(c_long, @intCast(tot.dirs)), noun);
+        const noun: []const u8 = if (tot.dirs == 1) "y" else "ies";
+        fw.interface.print("{d} director{s}\n", .{ tot.dirs, noun }) catch {};
     } else {
-        const dnoun: [*c]const u8 = if (tot.dirs == 1) "y" else "ies";
-        const fnoun: [*c]const u8 = if (tot.files == 1) "" else "s";
-        _ = c.fprintf(
-            outfile,
-            "%ld director%s, %ld file%s\n",
-            @as(c_long, @intCast(tot.dirs)),
-            dnoun,
-            @as(c_long, @intCast(tot.files)),
-            fnoun,
-        );
+        const dnoun: []const u8 = if (tot.dirs == 1) "y" else "ies";
+        const fnoun: []const u8 = if (tot.files == 1) "" else "s";
+        fw.interface.print("{d} director{s}, {d} file{s}\n", .{ tot.dirs, dnoun, tot.files, fnoun }) catch {};
     }
+}
+
+const noop = struct {
+    fn intro() void {}
+    fn close(_: ?*types.Info, _: c_int, _: c_int) void {}
+};
+
+pub fn ListingCalls() types.ListingCalls {
+    return .{
+        .intro = &noop.intro,
+        .outtro = &noop.intro,
+        .printinfo = &printinfo,
+        .printfile = &printfile,
+        .@"error" = &printerror,
+        .newline = &newline,
+        .close = &noop.close,
+        .report = &report,
+    };
 }

@@ -14,14 +14,12 @@ const InodeKey = struct { inode: Ino, dev: Dev };
 var utable: std.AutoHashMapUnmanaged(Uid, [:0]const u8) = .{};
 var gtable: std.AutoHashMapUnmanaged(Gid, [:0]const u8) = .{};
 var itable: std.AutoHashMapUnmanaged(InodeKey, void) = .{};
-// strhash is Linux-only (#ifdef __linux__ in tree.h)
-var strtable: std.StringHashMapUnmanaged([:0]const u8) = .{};
 
 // Process is short-lived so we intentionally leak, same as the C original.
 const allocator = std.heap.page_allocator;
 
 // POSIX-only
-export fn uidtoname(uid: Uid) [*:0]const u8 {
+pub fn uidtoname(uid: Uid) [*:0]const u8 {
     if (utable.get(uid)) |name| return name.ptr;
 
     const pw = std.c.getpwuid(uid);
@@ -39,7 +37,7 @@ export fn uidtoname(uid: Uid) [*:0]const u8 {
 }
 
 // POSIX-only
-export fn gidtoname(gid: Gid) [*:0]const u8 {
+pub fn gidtoname(gid: Gid) [*:0]const u8 {
     if (gtable.get(gid)) |name| return name.ptr;
 
     const gr = std.c.getgrgid(gid);
@@ -57,22 +55,13 @@ export fn gidtoname(gid: Gid) [*:0]const u8 {
 }
 
 // POSIX-only
-export fn saveino(inode: Ino, device: Dev) void {
+pub fn saveino(inode: Ino, device: Dev) void {
     itable.put(allocator, .{ .inode = inode, .dev = device }, {}) catch unreachable;
 }
 
 // POSIX-only
-export fn findino(inode: Ino, device: Dev) bool {
+pub fn findino(inode: Ino, device: Dev) bool {
     return itable.contains(.{ .inode = inode, .dev = device });
-}
-
-// Linux-only, strhash interns strings to avoid duplicate allocations (guarded by #ifdef __linux__ in tree.h).
-export fn strhash(str: [*:0]const u8) [*:0]const u8 {
-    const s = std.mem.sliceTo(str, 0);
-    if (strtable.get(s)) |interned| return interned.ptr;
-    const copy = allocator.dupeZ(u8, s) catch unreachable;
-    strtable.put(allocator, copy, copy) catch unreachable;
-    return copy.ptr;
 }
 
 test "uidtoname returns same pointer on cache hit" {
@@ -130,23 +119,6 @@ test "findino distinguishes different (inode, dev) pairs" {
     try testing.expect(findino(1, 1));
     try testing.expect(!findino(1, 2));
     try testing.expect(!findino(2, 1));
-}
-
-test "strhash returns same pointer for identical strings" {
-    const a = strhash("hello");
-    const b = strhash("hello");
-    try testing.expect(a == b);
-}
-
-test "strhash returns different pointers for different strings" {
-    const a = strhash("foo");
-    const b = strhash("bar");
-    try testing.expect(a != b);
-}
-
-test "strhash content matches input" {
-    const result = strhash("hello");
-    try testing.expectEqualStrings("hello", std.mem.span(result));
 }
 
 test "uidtoname unknown uid returns numeric string" {

@@ -5,6 +5,8 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
+
 fn srcStartsWith(s: [*:0]const u8, needle: []const u8) bool {
     if (needle.len == 0) return false;
     for (needle, 0..) |b, i| {
@@ -54,7 +56,7 @@ var path_buf: [c.PATH_MAX + 1]u8 = undefined;
 const sep_str = std.fs.path.sep_str;
 
 /// Joins n path segments, deduplicating consecutive separators.
-export fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
+pub fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
     const limit: [*]u8 = path_buf[c.PATH_MAX..].ptr;
 
     if (n == 0) {
@@ -76,7 +78,7 @@ export fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
 }
 
 /// Returns true if dir has exactly one child that is itself a directory.
-export fn is_singleton(dir: *c.struct__info) bool {
+pub fn is_singleton(dir: *types.Info) bool {
     const child = dir.child;
     if (child == null) return false;
     if (child[0] == null) return false;
@@ -84,21 +86,21 @@ export fn is_singleton(dir: *c.struct__info) bool {
     return child[0][0].isdir;
 }
 
-export fn xmalloc(size: usize) *anyopaque {
+pub fn xmalloc(size: usize) *anyopaque {
     return std.c.malloc(size) orelse {
         std.debug.print("tree: virtual memory exhausted.\n", .{});
         std.process.exit(1);
     };
 }
 
-export fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque {
+pub fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque {
     return std.c.realloc(ptr, size) orelse {
         std.debug.print("tree: virtual memory exhausted.\n", .{});
         std.process.exit(1);
     };
 }
 
-export fn scopy(s: [*c]const u8) [*c]u8 {
+pub fn scopy(s: [*c]const u8) [*c]u8 {
     const len = c.strlen(s);
     const dst: [*c]u8 = @ptrCast(xmalloc(len + 1));
     return c.strcpy(dst, s);

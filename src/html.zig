@@ -1,10 +1,14 @@
 //! HTML renderer ported from html.c.
 
+const std = @import("std");
+
 const c = @cImport({
     @cInclude("tree.h");
 });
 
-extern var flag: c.struct_Flags;
+const types = @import("types.zig");
+
+extern var flag: types.Flags;
 
 extern var version: [*c]const u8;
 extern var charset: [*c]const u8;
@@ -15,16 +19,16 @@ extern var title: [*c]const u8;
 extern var Hintro: [*c]const u8;
 extern var Houtro: [*c]const u8;
 
-extern var outfile: ?*c.FILE;
+extern var outfile: *std.fs.File;
 
-// FIXME: Still in C (file.c / tree.c); port later.
+// Still in tree.zig
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
-extern fn fillinfo(buf: [*c]u8, ent: *const c.struct__info) [*c]u8;
-extern fn indent(maxlevel: c_int) void;
+extern fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8;
+extern fn indent(w: *std.Io.Writer, maxlevel: c_int) void;
 
 export var htmldirlen: usize = 0;
 
-fn classOf(info: *c.struct__info) [*c]const u8 {
+fn classOf(info: *types.Info) [*c]const u8 {
     if (info.isdir) return "DIR";
     if (info.isexe) return "EXEC";
     if (info.isfifo) return "FIFO";
@@ -32,36 +36,36 @@ fn classOf(info: *c.struct__info) [*c]const u8 {
     return "NORM";
 }
 
-export fn html_encode(fd: *c.FILE, s_in: [*c]u8) void {
+pub fn encode(w: *std.Io.Writer, s_in: [*c]u8) void {
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         switch (s[0]) {
-            '<' => _ = c.fputs("&lt;", fd),
-            '>' => _ = c.fputs("&gt;", fd),
-            '&' => _ = c.fputs("&amp;", fd),
-            '"' => _ = c.fputs("&quot;", fd),
-            else => _ = c.fputc(@as(c_int, s[0]), fd),
+            '<' => w.writeAll("&lt;") catch {},
+            '>' => w.writeAll("&gt;") catch {},
+            '&' => w.writeAll("&amp;") catch {},
+            '"' => w.writeAll("&quot;") catch {},
+            else => w.writeByte(s[0]) catch {},
         }
     }
 }
 
-export fn url_encode(fd: *c.FILE, s_in: [*c]u8) bool {
+pub fn url_encode(w: *std.Io.Writer, s_in: [*c]u8) bool {
     const unreserved = "/-._~";
     var s = s_in;
     var slash = false;
     while (s[0] != 0) : (s += 1) {
         const ch: u8 = s[0];
-        const fmt: [*c]const u8 = if (c.isalnum(@as(c_int, ch)) != 0 or c.strchr(unreserved, @as(c_int, ch)) != null)
-            "%c"
-        else
-            "%%%02X";
-        _ = c.fprintf(fd, fmt, @as(c_int, ch));
+        if (c.isalnum(@as(c_int, ch)) != 0 or c.strchr(unreserved, @as(c_int, ch)) != null) {
+            w.writeByte(ch) catch {};
+        } else {
+            w.print("%{X:0>2}", .{ch}) catch {};
+        }
         slash = (ch == '/');
     }
     return slash;
 }
 
-fn fcat(filename: [*c]const u8) void {
+fn fcat(w: *std.Io.Writer, filename: [*c]const u8) void {
     const fp = c.fopen(filename, "r") orelse return;
     defer _ = c.fclose(fp);
 
@@ -69,190 +73,229 @@ fn fcat(filename: [*c]const u8) void {
     while (true) {
         const n = c.fread(&buf, 1, buf.len, fp);
         if (n == 0) break;
-        _ = c.fwrite(&buf, 1, n, outfile.?);
+        w.writeAll(buf[0..n]) catch {};
     }
 }
 
-export fn html_intro() void {
-    const out = outfile.?;
+pub fn intro() void {
+    var buf: [4096]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
     if (Hintro != null) {
-        fcat(Hintro);
+        fcat(&fw.interface, Hintro);
         return;
     }
-    const cs: [*c]const u8 = if (charset != null) charset else "iso-8859-1";
-    _ = c.fprintf(out,
+    const cs = if (charset != null) std.mem.span(charset) else "iso-8859-1";
+    fw.interface.print(
         \\<!DOCTYPE html>
         \\<html>
         \\<head>
-        \\ <meta http-equiv="Content-Type" content="text/html; charset=%s">
+        \\ <meta http-equiv="Content-Type" content="text/html; charset={s}">
         \\ <meta name="Author" content="Made by 'tree'">
         \\ <meta name="GENERATOR" content="
-    ++ "", cs);
-    _ = c.fprintf(out, "%s", version);
-    _ = c.fprintf(out,
+    , .{cs}) catch {};
+    fw.interface.print("{s}", .{std.mem.span(version)}) catch {};
+    const ttl = std.mem.span(title);
+    fw.interface.print(
         \\">
-        \\ <title>%s</title>
+        \\ <title>{s}</title>
         \\ <style type="text/css">
-        \\  BODY { font-family : monospace, sans-serif;  color: black;}
-        \\  P { font-family : monospace, sans-serif; color: black; margin:0px; padding: 0px;}
-        \\  A:visited { text-decoration : none; margin : 0px; padding : 0px;}
-        \\  A:link    { text-decoration : none; margin : 0px; padding : 0px;}
-        \\  A:hover   { text-decoration: underline; background-color : yellow; margin : 0px; padding : 0px;}
-        \\  A:active  { margin : 0px; padding : 0px;}
-        \\  .VERSION { font-size: small; font-family : arial, sans-serif; }
-        \\  .NORM  { color: black;  }
-        \\  .FIFO  { color: purple; }
-        \\  .CHAR  { color: yellow; }
-        \\  .DIR   { color: blue;   }
-        \\  .BLOCK { color: yellow; }
-        \\  .LINK  { color: aqua;   }
-        \\  .SOCK  { color: fuchsia;}
-        \\  .EXEC  { color: green;  }
+        \\  BODY {{ font-family : monospace, sans-serif;  color: black;}}
+        \\  P {{ font-family : monospace, sans-serif; color: black; margin:0px; padding: 0px;}}
+        \\  A:visited {{ text-decoration : none; margin : 0px; padding : 0px;}}
+        \\  A:link    {{ text-decoration : none; margin : 0px; padding : 0px;}}
+        \\  A:hover   {{ text-decoration: underline; background-color : yellow; margin : 0px; padding : 0px;}}
+        \\  A:active  {{ margin : 0px; padding : 0px;}}
+        \\  .VERSION {{ font-size: small; font-family : arial, sans-serif; }}
+        \\  .NORM  {{ color: black;  }}
+        \\  .FIFO  {{ color: purple; }}
+        \\  .CHAR  {{ color: yellow; }}
+        \\  .DIR   {{ color: blue;   }}
+        \\  .BLOCK {{ color: yellow; }}
+        \\  .LINK  {{ color: aqua;   }}
+        \\  .SOCK  {{ color: fuchsia;}}
+        \\  .EXEC  {{ color: green;  }}
         \\ </style>
         \\</head>
         \\<body>
         \\
-    ++ "\t<h1>%s</h1><p>\n", title, title);
+    ++ "\t<h1>{s}</h1><p>\n", .{ ttl, ttl }) catch {};
 }
 
-export fn html_outtro() void {
-    const out = outfile.?;
+pub fn outtro() void {
+    var buf: [256]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+
     if (Houtro != null) {
-        fcat(Houtro);
+        fcat(&fw.interface, Houtro);
         return;
     }
-    _ = c.fprintf(out, "\t<hr>\n");
-    _ = c.fprintf(out, "\t<p class=\"VERSION\">\n");
-    _ = c.fprintf(out, "\t\t %s <br>\n", version);
-    _ = c.fprintf(out, "\t</p>\n");
-    _ = c.fprintf(out, "</body>\n");
-    _ = c.fprintf(out, "</html>\n");
+    fw.interface.print("\t<hr>\n\t<p class=\"VERSION\">\n\t\t {s} <br>\n\t</p>\n</body>\n</html>\n", .{std.mem.span(version)}) catch {};
 }
 
-fn htmlPrint(s_in: [*c]const u8) void {
-    const out = outfile.?;
+fn htmlPrint(w: *std.Io.Writer, s_in: [*c]const u8) void {
     var i: usize = 0;
     while (s_in[i] != 0) : (i += 1) {
         if (s_in[i] == ' ') {
-            _ = c.fprintf(out, "%s", sp);
+            w.writeAll(std.mem.span(sp)) catch {};
         } else {
-            _ = c.fprintf(out, "%c", @as(c_int, s_in[i]));
+            w.writeByte(s_in[i]) catch {};
         }
     }
-    _ = c.fprintf(out, "%s%s", sp, sp);
+    const sp_s = std.mem.span(sp);
+    w.writeAll(sp_s) catch {};
+    w.writeAll(sp_s) catch {};
 }
 
-export fn html_printinfo(dirname: [*c]u8, file: *c.struct__info, level: c_int) c_int {
+pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     var info: [512]u8 = undefined;
     _ = fillinfo(&info, file);
 
+    var buf: [1024]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    const sp_s = std.mem.span(sp);
+
     if (flag.metafirst) {
         if (info[0] == '[') {
-            htmlPrint(&info);
-            _ = c.fprintf(outfile.?, "%s%s", sp, sp);
+            htmlPrint(&fw.interface, &info);
+            fw.interface.writeAll(sp_s) catch {};
+            fw.interface.writeAll(sp_s) catch {};
         }
-        if (!flag.noindent) indent(level);
+        if (!flag.noindent) indent(&fw.interface, level);
     } else {
-        if (!flag.noindent) indent(level);
+        if (!flag.noindent) indent(&fw.interface, level);
         if (info[0] == '[') {
-            htmlPrint(&info);
-            _ = c.fprintf(outfile.?, "%s%s", sp, sp);
+            htmlPrint(&fw.interface, &info);
+            fw.interface.writeAll(sp_s) catch {};
+            fw.interface.writeAll(sp_s) catch {};
         }
     }
 
     return 0;
 }
 
-export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*c.struct__info, descend: c_int) c_int {
-    const out = outfile.?;
+pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
+    var buf: [4096]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
 
-    _ = c.fprintf(out, "<a");
+    fw.interface.writeAll("<a") catch {};
     if (file) |f| {
-        if (flag.force_color) _ = c.fprintf(out, " class=\"%s\"", classOf(f));
+        if (flag.force_color) fw.interface.print(" class=\"{s}\"", .{std.mem.span(classOf(f))}) catch {};
         if (f.comment != null) {
-            _ = c.fprintf(out, " title=\"");
+            fw.interface.writeAll(" title=\"") catch {};
             var i: usize = 0;
             while (f.comment[i] != null) : (i += 1) {
-                html_encode(out, f.comment[i]);
-                if (f.comment[i + 1] != null) _ = c.fprintf(out, "\n");
+                encode(&fw.interface, f.comment[i]);
+                if (f.comment[i + 1] != null) fw.interface.writeByte('\n') catch {};
             }
-            _ = c.fprintf(out, "\"");
+            fw.interface.writeByte('"') catch {};
         }
 
         if (!flag.nolinks) {
-            _ = c.fprintf(out, " href=\"%s", host);
+            fw.interface.print(" href=\"{s}", .{std.mem.span(host)}) catch {};
             if (dirname != null) {
                 const len = c.strlen(dirname);
                 const off: usize = if (len >= htmldirlen) htmldirlen else 0;
                 const url_start = if (flag.htmloffset) dirname + off else dirname;
-                _ = url_encode(out, url_start);
+                _ = url_encode(&fw.interface, url_start);
                 if (c.strcmp(dirname, filename) != 0) {
-                    if (dirname[c.strlen(dirname) - 1] != '/') _ = c.fputc('/', out);
-                    _ = url_encode(out, filename);
+                    if (dirname[c.strlen(dirname) - 1] != '/') fw.interface.writeByte('/') catch {};
+                    _ = url_encode(&fw.interface, filename);
                 }
-                const tree_suffix: [*c]const u8 = if (descend > 1) "/00Tree.html" else "";
-                const slash_suffix: [*c]const u8 = if (f.isdir and descend < 2) "/" else "";
-                _ = c.fprintf(out, "%s%s\"", tree_suffix, slash_suffix);
+                const tree_suffix: []const u8 = if (descend > 1) "/00Tree.html" else "";
+                const slash_suffix: []const u8 = if (f.isdir and descend < 2) "/" else "";
+                fw.interface.print("{s}{s}\"", .{ tree_suffix, slash_suffix }) catch {};
             } else {
-                if (host[c.strlen(host) - 1] != '/') _ = c.fputc('/', out);
-                _ = url_encode(out, filename);
-                const tree_suffix: [*c]const u8 = if (descend > 1) "/00Tree.html" else "";
-                _ = c.fprintf(out, "%s\"", tree_suffix);
+                if (host[c.strlen(host) - 1] != '/') fw.interface.writeByte('/') catch {};
+                _ = url_encode(&fw.interface, filename);
+                const tree_suffix: []const u8 = if (descend > 1) "/00Tree.html" else "";
+                fw.interface.print("{s}\"", .{tree_suffix}) catch {};
             }
         }
     }
-    _ = c.fprintf(out, ">");
+    fw.interface.writeByte('>') catch {};
 
     if (dirname != null) {
-        html_encode(out, filename);
+        encode(&fw.interface, filename);
     } else {
-        html_encode(out, host);
+        encode(&fw.interface, host);
     }
 
-    _ = c.fprintf(out, "</a>");
+    fw.interface.writeAll("</a>") catch {};
     return 0;
 }
 
-export fn html_error(err: [*c]u8) c_int {
-    _ = c.fprintf(outfile.?, "  [%s]", err);
+pub fn printerror(err: [*c]u8) c_int {
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.print("  [{s}]", .{std.mem.span(err)}) catch {};
     return 0;
 }
 
-export fn html_newline(file: ?*c.struct__info, level: c_int, postdir: c_int, needcomma: c_int) void {
+pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = file;
     _ = level;
     _ = postdir;
     _ = needcomma;
-    _ = c.fprintf(outfile.?, "<br>\n");
+    var buf: [16]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    fw.interface.writeAll("<br>\n") catch {};
 }
 
-export fn html_close(file: *c.struct__info, level: c_int, needcomma: c_int) void {
+pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = level;
     _ = needcomma;
-    _ = c.fprintf(outfile.?, "</%s><br>\n", file.tag);
+    if (file) |f| {
+        var buf: [256]u8 = undefined;
+        var fw = outfile.writer(&buf);
+        defer fw.interface.flush() catch {};
+        fw.interface.print("</{s}><br>\n", .{std.mem.span(f.tag)}) catch {};
+    }
 }
 
-export fn html_report(tot: c.struct_totals) void {
-    const out = outfile.?;
-    var buf: [256]u8 = undefined;
+pub fn report(tot: types.Totals) void {
+    var buf: [512]u8 = undefined;
+    var fw = outfile.writer(&buf);
+    defer fw.interface.flush() catch {};
+    var pbuf: [256]u8 = undefined;
 
-    _ = c.fprintf(out, "<br><br><p>\n\n");
+    fw.interface.writeAll("<br><br><p>\n\n") catch {};
 
     if (flag.du) {
-        _ = psize(&buf, tot.size);
-        const unit: [*c]const u8 = if (flag.h or flag.si) "" else " bytes";
-        _ = c.fprintf(out, "%s%s used in ", @as([*c]const u8, &buf), unit);
+        _ = psize(&pbuf, @intCast(tot.size));
+        const unit: []const u8 = if (flag.h or flag.si) "" else " bytes";
+        const sz = std.mem.sliceTo(&pbuf, 0);
+        fw.interface.print("{s}{s} used in ", .{ sz, unit }) catch {};
     }
     if (flag.d) {
-        const suffix: [*c]const u8 = if (tot.dirs == 1) "y" else "ies";
-        _ = c.fprintf(out, "%ld director%s\n", @as(c_long, @intCast(tot.dirs)), suffix);
+        const suffix: []const u8 = if (tot.dirs == 1) "y" else "ies";
+        fw.interface.print("{d} director{s}\n", .{ tot.dirs, suffix }) catch {};
     } else {
-        const dsuffix: [*c]const u8 = if (tot.dirs == 1) "y" else "ies";
-        const fsuffix: [*c]const u8 = if (tot.files == 1) "" else "s";
-        _ = c.fprintf(out, "%ld director%s, %ld file%s\n", @as(c_long, @intCast(tot.dirs)), dsuffix, @as(c_long, @intCast(tot.files)), fsuffix);
+        const dsuffix: []const u8 = if (tot.dirs == 1) "y" else "ies";
+        const fsuffix: []const u8 = if (tot.files == 1) "" else "s";
+        fw.interface.print("{d} director{s}, {d} file{s}\n", .{ tot.dirs, dsuffix, tot.files, fsuffix }) catch {};
     }
 
-    _ = c.fprintf(out, "\n</p>\n");
+    fw.interface.writeAll("\n</p>\n") catch {};
+}
+
+pub fn ListingCalls() types.ListingCalls {
+    return .{
+        .intro = &intro,
+        .outtro = &outtro,
+        .printinfo = &printinfo,
+        .printfile = &printfile,
+        .@"error" = &printerror,
+        .newline = &newline,
+        .close = &close,
+        .report = &report,
+    };
 }

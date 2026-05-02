@@ -14,19 +14,21 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
 const pat = @import("pattern.zig");
+const util = @import("util.zig");
+const filter = @import("filter.zig");
 
-extern var outfile: ?*c.FILE;
-extern var linedraw: [*c]const c.struct_linedraw;
+extern var linedraw: [*c]const types.LineDraw;
 extern var xpattern: [c.PATH_MAX]u8;
 
-var infostack: ?*c.struct_infofile = null;
+var infostack: ?*types.InfoFile = null;
 
-fn new_comment(phead: ?*c.struct_pattern, line: [*c][*c]u8, lines: c_int) *c.struct_comment {
-    const com: *c.struct_comment = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_comment))));
+fn new_comment(phead: ?*types.Pattern, line: [*c][*c]u8, lines: c_int) *types.Comment {
+    const com: *types.Comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Comment))));
     com.pattern = phead;
     const lines_u: usize = @intCast(lines);
-    com.desc = @ptrCast(@alignCast(c.xmalloc(@sizeOf([*c]u8) * (lines_u + 1))));
+    com.desc = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (lines_u + 1))));
     var i: usize = 0;
     while (i < lines_u) : (i += 1) com.desc[i] = line[i];
     com.desc[i] = null;
@@ -34,16 +36,16 @@ fn new_comment(phead: ?*c.struct_pattern, line: [*c][*c]u8, lines: c_int) *c.str
     return com;
 }
 
-export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofile {
+pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     var buf: [c.PATH_MAX]u8 = undefined;
     var rpath: [c.PATH_MAX]u8 = undefined;
     var line: [c.PATH_MAX][*c]u8 = undefined;
     var lines: c_int = 0;
     var fp: ?*c.FILE = null;
-    var chead: ?*c.struct_comment = null;
-    var cend: ?*c.struct_comment = null;
-    var phead: ?*c.struct_pattern = null;
-    var pend: ?*c.struct_pattern = null;
+    var chead: ?*types.Comment = null;
+    var cend: ?*types.Comment = null;
+    var phead: ?*types.Pattern = null;
+    var pend: ?*types.Pattern = null;
 
     const path_slice = std.mem.span(path);
     const stat_result = std.fs.cwd().statFile(path_slice) catch null;
@@ -68,11 +70,11 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
 
     while (c.fgets(&buf, c.PATH_MAX, fp) != null) {
         if (buf[0] == '#') continue;
-        c.gittrim(&buf);
+        filter.gittrim(&buf);
         if (c.strlen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
-            line[@intCast(lines)] = c.scopy(&buf[1]);
+            line[@intCast(lines)] = util.scopy(&buf[1]);
             lines += 1;
         } else {
             if (lines != 0) {
@@ -96,7 +98,7 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
                 pend = null;
                 lines = 0;
             }
-            const p = c.new_pattern(&buf);
+            const p = filter.new_pattern(&buf);
             if (phead == null) {
                 phead = p;
                 pend = p;
@@ -120,33 +122,33 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*c.struct_infofi
 
     _ = c.fclose(fp);
 
-    const inf: *c.struct_infofile = @ptrCast(@alignCast(c.xmalloc(@sizeOf(c.struct_infofile))));
+    const inf: *types.InfoFile = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.InfoFile))));
     inf.comments = chead;
-    inf.path = c.scopy(path);
+    inf.path = util.scopy(path);
     inf.next = null;
 
     return inf;
 }
 
-export fn push_infostack(inf: ?*c.struct_infofile) void {
+pub fn push_infostack(inf: ?*types.InfoFile) void {
     if (inf == null) return;
     inf.?.next = infostack;
     infostack = inf;
 }
 
-export fn pop_infostack() ?*c.struct_infofile {
+pub fn pop_infostack() ?*types.InfoFile {
     const inf = infostack orelse return null;
 
     infostack = inf.next;
 
-    var cn: ?*c.struct_comment = inf.comments;
+    var cn: ?*types.Comment = inf.comments;
     while (cn != null) {
         const cur = cn.?;
         cn = cur.next;
 
         // Note: original C frees pattern->pattern (the string) but never the
         // pattern struct nodes themselves — preserved verbatim.
-        var pp: ?*c.struct_pattern = cur.pattern;
+        var pp: ?*types.Pattern = cur.pattern;
         while (pp != null) {
             const pcur = pp.?;
             pp = pcur.next;
@@ -165,18 +167,18 @@ export fn pop_infostack() ?*c.struct_infofile {
 
 /// Returns an info pointer if a path matches a pattern.
 /// top == 1 if called in a directory with a .info file.
-export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool, ignore_case: bool) ?*c.struct_comment {
+pub fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool, ignore_case: bool) ?*types.Comment {
     if (infostack == null) return null;
 
     var top = top_in;
-    var inf: ?*c.struct_infofile = infostack;
+    var inf: ?*types.InfoFile = infostack;
     while (inf != null) : (inf = inf.?.next) {
         const cur_inf = inf.?;
         const fpos: usize = @intCast(c.sprintf(&xpattern, "%s/", cur_inf.path));
 
-        var com: ?*c.struct_comment = cur_inf.comments;
+        var com: ?*types.Comment = cur_inf.comments;
         while (com != null) : (com = com.?.next) {
-            var p: ?*c.struct_pattern = com.?.pattern;
+            var p: ?*types.Pattern = com.?.pattern;
             while (p != null) : (p = p.?.next) {
                 const pattern = p.?.pattern;
                 if (pat.match(path, pattern, isdir, ignore_case) == 1) return com;
@@ -191,17 +193,14 @@ export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir
     return null;
 }
 
-export fn printcomment(line: usize, lines: usize, s: [*c]u8) void {
-    if (lines == 1) {
-        _ = c.fprintf(outfile, "%s ", linedraw.*.csingle);
-    } else if (line == 0) {
-        _ = c.fprintf(outfile, "%s ", linedraw.*.ctop);
-    } else if (line < 2) {
-        const drw: [*c]const u8 = if (lines == 2) linedraw.*.cbot else linedraw.*.cmid;
-        _ = c.fprintf(outfile, "%s ", drw);
-    } else {
-        const drw: [*c]const u8 = if (line == lines - 1) linedraw.*.cbot else linedraw.*.cext;
-        _ = c.fprintf(outfile, "%s ", drw);
-    }
-    _ = c.fprintf(outfile, "%s\n", s);
+pub fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) void {
+    const drw: [*c]const u8 = if (lines == 1)
+        linedraw.*.csingle
+    else if (line == 0)
+        linedraw.*.ctop
+    else if (line < 2)
+        (if (lines == 2) linedraw.*.cbot else linedraw.*.cmid)
+    else
+        (if (line == lines - 1) linedraw.*.cbot else linedraw.*.cext);
+    w.print("{s} {s}\n", .{ std.mem.span(drw), std.mem.span(s) }) catch {};
 }

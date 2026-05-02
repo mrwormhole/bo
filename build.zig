@@ -24,53 +24,23 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
     exe.linkLibC();
     // Add a dedicated include dir that only exposes tree.h to the C importer.
     exe.addAfterIncludePath(b.path("."));
-
-    addZigObject(b, exe, target, optimize, "hash", .{ .include_root = false, .defines = false });
-    addZigObject(b, exe, target, optimize, "util", .{});
-    addZigObject(b, exe, target, optimize, "json", .{});
-    addZigObject(b, exe, target, optimize, "xml", .{});
-    addZigObject(b, exe, target, optimize, "html", .{});
-    addZigObject(b, exe, target, optimize, "list", .{});
-    addZigObject(b, exe, target, optimize, "unix", .{});
-    addZigObject(b, exe, target, optimize, "info", .{});
-    addZigObject(b, exe, target, optimize, "filter", .{});
-    addZigObject(b, exe, target, optimize, "file", .{});
-    addZigObject(b, exe, target, optimize, "color", .{});
+    addPreprocessorDefines(exe, target);
 
     return exe;
 }
 
-const ZigObjectOpts = struct {
-    link_libc: bool = true,
-    include_root: bool = true,
-    defines: bool = true,
-};
-
-fn addZigObject(
-    b: *std.Build,
-    exe: *std.Build.Step.Compile,
-    target: std.Build.ResolvedTarget,
-    optimize: std.builtin.OptimizeMode,
-    name: []const u8,
-    opts: ZigObjectOpts,
-) void {
-    const obj = b.addObject(.{
-        .name = name,
-        .root_module = b.createModule(.{
-            .root_source_file = b.path(b.fmt("src/{s}.zig", .{name})),
-            .target = target,
-            .optimize = optimize,
-        }),
-    });
-    if (opts.link_libc) obj.linkLibC();
-    if (opts.include_root) obj.addIncludePath(b.path("."));
-    if (opts.defines) addPreprocessorDefines(obj, target);
-    exe.addObject(obj);
-}
-
+// TODO: Remove these C feature macros once the remaining C-imported file and
+// platform types/macros are migrated to Zig stdlib types:
+// - types/handles: c.off_t, c.dev_t, c.ino_t, c.mode_t, c.time_t, c.uid_t,
+//   c.gid_t, c.u_long, c.struct_stat, c.struct_dirent, c.DIR, c.FILE
+// - filesystem constants: c.PATH_MAX, c.S_IF*, c.S_IR*, c.S_IW*, c.S_IX*,
+//   c.S_ISUID, c.S_ISGID, c.S_ISVTX
+// - Linux/project macros: c.ENV_STDDATA_FD, c.STDDATA_FILENO, c.F_GETFD,
+//   c.INFO_PATH, c.MINIT, c.MINC
+// - locale macros: c.LC_CTYPE, c.LC_COLLATE, c.LC_TIME, c.CODESET
 fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
     // Universal defines for large file support
-    exe.root_module.addCMacro("LARGEFILE_SOURCE", "");
+    exe.root_module.addCMacro("_LARGEFILE_SOURCE", "");
 
     const os_tag = target.result.os.tag;
     switch (os_tag) {
