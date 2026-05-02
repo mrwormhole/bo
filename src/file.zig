@@ -273,8 +273,8 @@ fn fprune(
         dir = arr;
     }
 
-    if (ig != null) ig = @ptrCast(filter.flush_filterstack());
-    if (inf != null) inf = @ptrCast(info_mod.pop_infostack());
+    if (ig != null) _ = filter.flush_filterstack();
+    if (inf != null) _ = info_mod.pop_infostack();
 
     return dir;
 }

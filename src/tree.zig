@@ -76,7 +76,7 @@ export var topsort: ?*const SortFn = null;
 var sLevel: [*c]u8 = null;
 
 var _outfile: std.fs.File = undefined;
-export var outfile: *std.fs.File = &_outfile;
+export const outfile: *std.fs.File = &_outfile;
 export var dirs: [*c]c_int = null;
 export var Level: isize = 0;
 export var maxdirs: usize = 0;
