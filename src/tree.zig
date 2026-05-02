@@ -842,7 +842,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
 // CLI helpers
 // ---------------------------------------------------------------------------
 
-fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u8) [*c]u8 {
+fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u8) RunError![*c]u8 {
     var ret: [*c]u8 = null;
     const len: usize = c.strlen(prefix);
 
@@ -856,7 +856,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
             } else {
                 _ = c.fprintf(cStderr(), "tree: Missing argument to %s=\n", prefix);
                 if (c.strcmp(prefix, "--charset=") == 0) initlinedraw(true);
-                c.exit(c.EXIT_FAILURE);
+                return error.InvalidArgument;
             }
         } else if (argv[n.*] != null) {
             ret = argv[n.*];
@@ -865,18 +865,39 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
         } else {
             _ = c.fprintf(cStderr(), "tree: Missing argument to %s\n", prefix);
             if (c.strcmp(prefix, "--charset") == 0) initlinedraw(true);
-            c.exit(c.EXIT_FAILURE);
+            return error.InvalidArgument;
         }
     }
     return ret;
 }
 
-pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
+pub const RunError = std.mem.Allocator.Error || error{
+    InvalidArgument,
+    InvalidOutputFile,
+    TreeHadErrors,
+};
+
+pub fn run(gpa: std.mem.Allocator, args: []const [:0]u8) RunError!void {
+    var argv_buf = try gpa.alloc([*c]u8, args.len + 1);
+    defer gpa.free(argv_buf);
+
+    for (args, 0..) |arg, arg_i| {
+        argv_buf[arg_i] = @constCast(arg.ptr);
+    }
+    argv_buf[args.len] = null;
+
+    try runWithArgv(gpa, argv_buf[0..args.len :null]);
+}
+
+fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void {
+    const argc = argv_slice.len;
+    const argv: [*c][*c]u8 = argv_slice.ptr;
+
     _outfile = std.fs.File.stdout();
     var dirname: [*c][*c]u8 = null;
 
-    var patterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
-    var ipatterns_list = std.ArrayList([*c]u8).initCapacity(gpa, 16) catch return 1;
+    var patterns_list = try std.ArrayList([*c]u8).initCapacity(gpa, 16);
+    var ipatterns_list = try std.ArrayList([*c]u8).initCapacity(gpa, 16);
 
     defer patterns_list.deinit(gpa);
     defer ipatterns_list.deinit(gpa);
@@ -933,7 +954,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
 
     n = 1;
     i = 1;
-    while (i < @as(usize, @intCast(argc))) : (i = n) {
+    while (i < argc) : (i = n) {
         n += 1;
         if (optf and argv[i][0] == '-' and argv[i][1] != 0) {
             j = 1;
@@ -964,17 +985,17 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                     'P' => {
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -P option.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
-                        patterns_list.append(gpa, argv[n]) catch c.exit(c.EXIT_FAILURE);
+                        try patterns_list.append(gpa, argv[n]);
                         n += 1;
                     },
                     'I' => {
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -I option.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
-                        ipatterns_list.append(gpa, argv[n]) catch c.exit(c.EXIT_FAILURE);
+                        try ipatterns_list.append(gpa, argv[n]);
                         n += 1;
                     },
                     'A' => flag.ansilines = if (opt_toggle) !flag.ansilines else true,
@@ -1007,7 +1028,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                         lc = html.ListingCalls();
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -H option.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
                         host = argv[n];
                         n += 1;
@@ -1021,7 +1042,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                     'T' => {
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -T option.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
                         title = argv[n];
                         n += 1;
@@ -1041,20 +1062,20 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             n += 1;
                             if (sLevel == null) {
                                 _ = c.fprintf(cStderr(), "tree: Missing argument to -L option.\n");
-                                c.exit(c.EXIT_FAILURE);
+                                return error.InvalidArgument;
                             }
                         }
                         Level = @intCast(c.strtoul(sLevel, null, 0));
                         Level -= 1;
                         if (Level < 0) {
                             _ = c.fprintf(cStderr(), "tree: Invalid level, must be greater than 0.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
                     },
                     'o' => {
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -o option.\n");
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
                         outfilename = argv[n];
                         n += 1;
@@ -1067,7 +1088,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             if (c.strcmp("--help", argv[i]) == 0) {
                                 help.print();
-                                c.exit(c.EXIT_SUCCESS);
+                                return;
                             }
                             if (c.strcmp("--version", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
@@ -1104,12 +1125,12 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 topsort = &filesfirst;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--filelimit");
+                            arg = try longArg(argv, i, &j, &n, "--filelimit");
                             if (arg != null) {
                                 flag.flimit = c.atoi(arg);
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--charset");
+                            arg = try longArg(argv, i, &j, &n, "--charset");
                             if (arg != null) {
                                 charset = arg;
                                 break;
@@ -1132,7 +1153,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.prune = if (opt_toggle) !flag.prune else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--timefmt");
+                            arg = try longArg(argv, i, &j, &n, "--timefmt");
                             if (arg != null) {
                                 timefmt = util.scopy(arg);
                                 flag.D = true;
@@ -1148,7 +1169,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.matchdirs = if (opt_toggle) !flag.matchdirs else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--sort");
+                            arg = try longArg(argv, i, &j, &n, "--sort");
                             if (arg != null) {
                                 basesort = null;
                                 k = 0;
@@ -1164,7 +1185,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                     while (sorts[k].name != null) : (k += 1) {
                                         _ = c.printf("%s%c", sorts[k].name, @as(c_int, if (sorts[k + 1].name != null) ',' else '\n'));
                                     }
-                                    c.exit(c.EXIT_FAILURE);
+                                    return error.InvalidArgument;
                                 }
                                 break;
                             }
@@ -1185,13 +1206,13 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.metafirst = if (opt_toggle) !flag.metafirst else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--gitfile");
+                            arg = try longArg(argv, i, &j, &n, "--gitfile");
                             if (arg != null) {
                                 flag.gitignore = true;
                                 const new_ig = filter.new_ignorefile(arg, arg, false);
                                 if (new_ig != null) filter.push_filterstack(new_ig) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load gitignore file\n");
-                                    c.exit(c.EXIT_FAILURE);
+                                    return error.InvalidArgument;
                                 }
                                 break;
                             }
@@ -1205,22 +1226,22 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.showinfo = if (opt_toggle) !flag.showinfo else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--infofile");
+                            arg = try longArg(argv, i, &j, &n, "--infofile");
                             if (arg != null) {
                                 flag.showinfo = true;
                                 const new_inf = info_mod.new_infofile(arg, false);
                                 if (new_inf != null) info_mod.push_infostack(new_inf) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load infofile\n");
-                                    c.exit(c.EXIT_FAILURE);
+                                    return error.InvalidArgument;
                                 }
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--hintro");
+                            arg = try longArg(argv, i, &j, &n, "--hintro");
                             if (arg != null) {
                                 Hintro = util.scopy(arg);
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--houtro");
+                            arg = try longArg(argv, i, &j, &n, "--houtro");
                             if (arg != null) {
                                 Houtro = util.scopy(arg);
                                 break;
@@ -1235,7 +1256,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.hyper = if (opt_toggle) !flag.hyper else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--scheme");
+                            arg = try longArg(argv, i, &j, &n, "--scheme");
                             if (arg != null) {
                                 if (c.strchr(arg, ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
@@ -1245,7 +1266,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 }
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--authority");
+                            arg = try longArg(argv, i, &j, &n, "--authority");
                             if (arg != null) {
                                 if (c.strcmp(arg, ".") == 0) authority = util.scopy("") else authority = util.scopy(arg);
                                 break;
@@ -1260,7 +1281,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 flag.condense_singletons = if (opt_toggle) !flag.condense_singletons else true;
                                 break;
                             }
-                            arg = longArg(argv, i, &j, &n, "--compress");
+                            arg = try longArg(argv, i, &j, &n, "--compress");
                             if (arg != null) {
                                 flag.compress_indent = c.atoi(arg);
                                 flag.remove_space = flag.compress_indent < 0;
@@ -1289,16 +1310,16 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             _ = c.fprintf(cStderr(), "tree: Invalid argument `%s'.\n", argv[i]);
                             help.print_all();
-                            c.exit(c.EXIT_FAILURE);
+                            return error.InvalidArgument;
                         }
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         help.print_all();
-                        c.exit(c.EXIT_FAILURE);
+                        return error.InvalidArgument;
                     },
                     else => {
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         help.print_all();
-                        c.exit(c.EXIT_FAILURE);
+                        return error.InvalidArgument;
                     },
                 }
             }
@@ -1325,8 +1346,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
         const name = std.mem.span(@as([*:0]const u8, @ptrCast(outfilename.?)));
         _outfile = std.fs.cwd().createFile(name, .{}) catch {
             _ = c.fprintf(cStderr(), "tree: invalid filename '%s'\n", outfilename);
-            c.exit(c.EXIT_FAILURE);
-            unreachable;
+            return error.InvalidOutputFile;
         };
     }
 
@@ -1338,7 +1358,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
         var vfw = outfile.writer(&vbuf);
         vfw.interface.print("{s}\n", .{std.mem.span(version)}) catch {};
         vfw.interface.flush() catch {};
-        c.exit(c.EXIT_SUCCESS);
+        return;
     }
 
     if (dirname == null) {
@@ -1371,5 +1391,5 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
 
     if (outfilename != null) outfile.close();
 
-    return if (errors != 0) 2 else 0;
+    if (errors != 0) return error.TreeHadErrors;
 }
