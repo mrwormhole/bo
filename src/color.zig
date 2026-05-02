@@ -576,19 +576,6 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
     return print_color(w, COL_NORMAL);
 }
 
-// Static buffer for getcharset() — mirrors C's `static char buffer[256]`.
-var getcharset_buf: [256]u8 = undefined;
-
-export fn getcharset() [*c]const u8 {
-    const cs: [*c]u8 = c.getenv("TREE_CHARSET");
-    if (cs != null) {
-        _ = c.strncpy(&getcharset_buf, cs, 255);
-        return @as([*c]const u8, @ptrCast(&getcharset_buf));
-    }
-
-    return null;
-}
-
 pub fn initlinedraw(help: bool) void {
     if (help) {
         var i: usize = 0;

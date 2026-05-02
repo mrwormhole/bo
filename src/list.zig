@@ -265,6 +265,20 @@ pub fn listdir(
             if (!xdev_block and !link_block) {
                 descend = 1;
 
+                // if ((*dir)->lnk) {
+                //   if (*(*dir)->lnk == '/') newpath = (*dir)->lnk;
+                //   else {
+                //     if (flag.f && !strcmp(dirname,"/")) sprintf(path,"%s%s",dirname,(*dir)->lnk);
+                //     else sprintf(path,"%s/%s",dirname,(*dir)->lnk);
+                //   }
+                //   if (found) {
+                //     err = "recursive, not followed";
+                //     /* Not actually a problem if we weren't going to descend anyway: */
+                //     if (Level >= 0 && lev > Level) err = NULL;
+                //     descend = -1;
+                //   }
+                // }
+
                 if (entry.*.lnk != null and found) {
                     err = @constCast("recursive, not followed");
                     // Not actually a problem if we weren't going to descend anyway:

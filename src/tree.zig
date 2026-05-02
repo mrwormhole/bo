@@ -28,13 +28,6 @@ const linux = @import("linux.zig");
 // ---------------------------------------------------------------------------
 extern var linedraw: [*c]const types.LineDraw;
 
-// ---------------------------------------------------------------------------
-// Extern declarations for project-defined functions
-// ---------------------------------------------------------------------------
-
-// color.zig
-extern fn getcharset() [*c]const u8;
-
 // list.zig
 // extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
 const emit_tree = @import("list.zig").emit_tree;
@@ -138,6 +131,9 @@ inline fn cStdout() ?*c.FILE {
 }
 
 fn getMbCurMax() c_int {
+    // MB_CUR_MAX is a runtime locale value.  On glibc-based Linux systems it is
+    // exposed via __ctype_get_mb_cur_max; on macOS/__mb_cur_max; elsewhere
+    // default to 1 (single-byte) which disables the wide-char printit path.
     switch (builtin.os.tag) {
         .linux => {
             const glibc = struct {
@@ -176,6 +172,8 @@ export fn prot(m: c.mode_t) [*c]u8 {
     while (ifmt[@intCast(i)] != 0 and (m & c.S_IFMT) != ifmt[@intCast(i)]) : (i += 1) {}
     prot_buf[0] = fmt_str[@intCast(i)];
 
+    // Nice, but maybe not so portable, it is should be no less portable than the
+    // old code.
     const perms = "rwxrwxrwx";
     var b: c.mode_t = c.S_IRUSR;
     var j: usize = 0;
@@ -202,6 +200,7 @@ export fn do_date(t: c.time_t) [*c]u8 {
         do_date_buf[255] = 0;
     } else {
         const cur: c.time_t = c.time(null);
+        // Use strftime() so that locale is respected:
         if (t > cur or (t + six_months) < cur) {
             _ = c.strftime(&do_date_buf, 255, "%b %e  %Y", tm);
         } else {
@@ -301,7 +300,7 @@ export fn Ftype(mode: c.mode_t) u8 {
     if (!flag.d and m == c.S_IFDIR) return '/';
     if (m == c.S_IFSOCK) return '=';
     if (m == c.S_IFIFO) return '|';
-    if (m == c.S_IFLNK) return '@';
+    if (m == c.S_IFLNK) return '@'; // Here, but never actually used though.
     if (@hasDecl(c, "S_IFDOOR")) {
         if (m == c.S_IFDOOR) return '>';
     }
@@ -343,6 +342,8 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8 {
     return buf;
 }
 
+// They cried out for ANSI-lines (not really), but here they are, as an option
+// for the xterm and console capable among you, as a run-time option.
 export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
     const spaces = [3][]const u8{ "   ", "  ", " " };
     const htmlspaces = [3][]const u8{ "&nbsp;&nbsp;&nbsp;", "&nbsp;&nbsp;", "&nbsp;" };
@@ -367,6 +368,7 @@ export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
 // Sort functions
 // ---------------------------------------------------------------------------
 
+// filesfirst and dirsfirst are now top-level meta-sorts.
 export fn filesfirst(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
     if (a[0].*.isdir != b[0].*.isdir) {
         return if (a[0].*.isdir) 1 else -1;
@@ -446,6 +448,8 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
         ent.size = @intCast(lst.st_size);
         ent.ldev = @intCast(lst.st_dev);
         ent.linode = @intCast(lst.st_ino);
+        // st_atime/ctime/mtime are C macros not real fields; access via timespec members.
+        // macOS uses st_atimespec; POSIX (FreeBSD etc.) uses st_atim.
         if (comptime @hasField(c.struct_stat, "st_atimespec")) {
             ent.atime = @intCast(lst.st_atimespec.tv_sec);
             ent.ctime = @intCast(lst.st_ctimespec.tv_sec);
@@ -459,6 +463,7 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
     }
 }
 
+// Split out stat portion from read_dir as prelude to just using stat structure directly.
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (getinfo_lbuf == null) {
         getinfo_lbufsize = c.PATH_MAX;
@@ -469,6 +474,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if (!doLstatInfo(path, &ent_storage)) return null;
 
+    // Determine if it's a symlink
     const lst_mode: c.mode_t = @intCast(ent_storage.mode);
     var st_mode: c.mode_t = lst_mode;
     var st_dev: c.dev_t = @intCast(ent_storage.ldev);
@@ -494,6 +500,12 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
                 st_ino = st.st_ino;
             }
         }
+        // Orphan symlink: the target doesn't exist, so "target mode/dev/inode"
+        // are undefined. Zero them — downstream code reads st_mode as lnkmode
+        // (target type) and st_dev/st_ino as the saveino dedup key. Leaving
+        // them at the link's own lst_* values would lie: lnkmode would report
+        // S_IFLNK ("target is a symlink", meaningless) and saveino would key
+        // on the link itself. C handles this with memset(&st, 0, sizeof(st)).
         if (rs < 0) {
             st_mode = 0;
             st_dev = 0;
@@ -512,6 +524,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if (flag.d and ((st_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR))) return null;
 
+    // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
     const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
 
@@ -540,6 +553,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     ent.isdir = isdir;
 
+    // These should perhaps be eliminated, as they're barely used:
     ent.issok = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFSOCK));
     ent.isfifo = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFIFO));
     ent.isexe = (st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
@@ -660,6 +674,7 @@ export fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*t
 
     if (flag.gitignore) {
         var tig: ?*types.IgnoreFile = null;
+        // Not going to implement git configs so no core.excludesFile support.
         if (top) {
             const stmp = c.getenv("GIT_DIR");
             if (stmp != null) {
@@ -682,6 +697,9 @@ export fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*t
     }
 }
 
+// This is for all the impossible things people wanted the old tree to do.
+// This can and will use a large amount of memory for large directory trees
+// and also take some time.
 export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
@@ -706,6 +724,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
             if (c.stat(d, &sb) == 0) dev = sb.st_dev;
         }
     }
+    // if the directory name matches, turn off pattern matching for contents
     const last_name: [*c]const u8 = c.strrchr(d, file_pathsep[0]);
     if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name.? + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
         tmp_pattern = pattern;
@@ -801,6 +820,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                     }
                 }
             }
+            // prune empty folders, unless they match the requested pattern
             if (flag.prune and entry.*.child == null and
                 !(flag.matchdirs and pattern != 0 and pat.include(entry.*.name, patterns[0..@intCast(pattern)], entry.*.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
             {
@@ -823,6 +843,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         tmp_pattern = 0;
     }
 
+    // sorting needs to be deferred for --du:
     if (topsort != null) {
         const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
         c.qsort(@ptrCast(sav), @intCast(n), @sizeOf([*c]types.Info), cmp);
@@ -842,6 +863,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
 // CLI helpers
 // ---------------------------------------------------------------------------
 
+// Time to switch to getopt()?
 fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u8) RunError![*c]u8 {
     var ret: [*c]u8 = null;
     const len: usize = c.strlen(prefix);
@@ -926,8 +948,9 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
     _ = c.setlocale(c.LC_CTYPE, "");
     _ = c.setlocale(c.LC_COLLATE, "");
 
-    charset = getcharset();
-    if (charset == null) {
+    if (std.posix.getenv("TREE_CHARSET")) |env_charset| {
+        charset = env_charset.ptr;
+    } else {
         const codeset = c.nl_langinfo(c.CODESET);
         if (c.strcmp(codeset, "UTF-8") == 0 or c.strcmp(codeset, "utf8") == 0) {
             charset = "UTF-8";
@@ -936,9 +959,11 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
 
     var lc: types.ListingCalls = unix.ListingCalls();
 
+    // Still a hack, but assume that if the macro is defined, we can use it:
     mb_cur_max = getMbCurMax();
 
     if (comptime builtin.os.tag == .linux) {
+        // Output JSON automatically to "stddata" if present:
         const stddata_fd_str = c.getenv(c.ENV_STDDATA_FD);
         if (stddata_fd_str != null) {
             var std_fd: c_int = c.atoi(stddata_fd_str);
@@ -1037,6 +1062,8 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             flag.htmloffset = true;
                             host += 1;
                         }
+                        // Allows a / if that is the only character as the 'host':
+                        //      if (k && host[k] == '/') host[k] = '\0';
                         sp = "&nbsp;";
                     },
                     'T' => {
@@ -1268,6 +1295,8 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             }
                             arg = try longArg(argv, i, &j, &n, "--authority");
                             if (arg != null) {
+                                // I don't believe that . by itself can be a valid hostname,
+                                // so it will do as a null authority.
                                 if (c.strcmp(arg, ".") == 0) authority = util.scopy("") else authority = util.scopy(arg);
                                 break;
                             }
@@ -1373,6 +1402,8 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
     if (flag.R and Level == -1) flag.R = false;
 
     if (flag.hyper and authority == null) {
+        // If the hostname is longer than PATH_MAX, maybe it's just as well we don't
+        // try to use it.
         if (c.gethostname(&xpattern, c.PATH_MAX) < 0) {
             _ = c.fprintf(cStderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
