@@ -539,7 +539,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if (comptime builtin.os.tag == .linux) {
         if (flag.acl) ent.hasacl = linux.has_acl(path);
-        if (flag.selinux) ent.secontext = linux.selinux_context(path, xpattern) else ent.secontext = null;
+        if (flag.selinux) ent.secontext = linux.selinux_context(path) else ent.secontext = null;
     }
 
     ent.isdir = isdir;
