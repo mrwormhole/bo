@@ -176,7 +176,7 @@ pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
 
     if (!flag.noindent and level >= 0) indent(&fw.interface, level);
 
-    const tag: []const u8 = if (file) |f| std.mem.span(f.tag) else "unknown";
+    const tag: []const u8 = if (file) |f| (if (f.tag != null) std.mem.span(f.tag) else "unknown") else "unknown";
     const trailer = nl();
     fw.interface.print("</{s}>{s}", .{ tag, trailer }) catch {};
 }

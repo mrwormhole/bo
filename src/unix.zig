@@ -22,8 +22,6 @@ extern fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void;
 extern fn printit(w: *std.Io.Writer, s: [*c]const u8) void;
 extern fn Ftype(mode: c.mode_t) u8;
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
-// extern fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool;
-//extern fn endcolor(w: *std.Io.Writer) void;
 
 const colorize = @import("color.zig").colorize;
 const endcolor = @import("color.zig").endcolor;
