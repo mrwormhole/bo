@@ -171,12 +171,12 @@ pub const Totals = extern struct {
 };
 
 pub const ListingCalls = struct {
-    intro: *const fn () void,
-    outtro: *const fn () void,
-    printinfo: *const fn ([*c]u8, ?*Info, c_int) c_int,
-    printfile: *const fn ([*c]u8, [*c]u8, ?*Info, c_int) c_int,
-    @"error": *const fn ([*c]u8) c_int,
-    newline: *const fn (?*Info, c_int, c_int, c_int) void,
-    close: *const fn (?*Info, c_int, c_int) void,
-    report: *const fn (Totals) void,
+    intro: ?*const fn () void,
+    outtro: ?*const fn () void,
+    printinfo: ?*const fn ([*c]u8, ?*Info, c_int) c_int,
+    printfile: ?*const fn ([*c]u8, [*c]u8, ?*Info, c_int) c_int,
+    @"error": ?*const fn ([*c]u8) c_int,
+    newline: ?*const fn (?*Info, c_int, c_int, c_int) void,
+    close: ?*const fn (?*Info, c_int, c_int) void,
+    report: ?*const fn (Totals) void,
 };

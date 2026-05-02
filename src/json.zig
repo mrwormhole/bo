@@ -21,17 +21,13 @@ const c = @cImport({
 });
 
 const types = @import("types.zig");
+const hash = @import("hash.zig");
 
 extern var flag: types.Flags;
 extern var outfile: *std.fs.File;
-extern var _nl: [*c]const u8;
 
 const ifmt = @extern([*]const c.mode_t, .{ .name = "ifmt" });
 const ftype = @extern([*]const [*c]const u8, .{ .name = "ftype" });
-
-// Already ported in hash.zig — link against the exported C symbols.
-extern fn uidtoname(uid: c.uid_t) [*c]const u8;
-extern fn gidtoname(gid: c.gid_t) [*c]const u8;
 
 // Still in tree.zig
 extern fn prot(mode: c.mode_t) [*c]u8;
@@ -41,7 +37,7 @@ extern fn do_date(t: c.time_t) [*c]u8;
 // RFC 8259 escape map: index 0..31 → '-' means \uXXXX, otherwise the letter after '\'.
 const ctrl_map: *const [32]u8 = "0-------btn-fr------------------";
 
-fn jsonEncode(w: *std.Io.Writer, s_in: [*c]const u8) void { // FIXME: Still not UTF-8
+fn encode(w: *std.Io.Writer, s_in: [*c]const u8) void { // FIXME: Still not UTF-8
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         const ch: u8 = s[0];
@@ -59,7 +55,7 @@ fn jsonEncode(w: *std.Io.Writer, s_in: [*c]const u8) void { // FIXME: Still not 
     }
 }
 
-fn json_indent(w: *std.Io.Writer, maxlevel: c_int) void {
+fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
     const spaces = [_][]const u8{ "    ", "   ", "  ", " ", "" };
     if (flag.noindent) return;
 
@@ -73,7 +69,11 @@ fn json_indent(w: *std.Io.Writer, maxlevel: c_int) void {
     }
 }
 
-fn json_fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
+fn nl() []const u8 {
+    return if (flag.noindent) "" else "\n";
+}
+
+fn fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
     if (flag.inode) w.print(",\"inode\":{d}", .{ent.inode}) catch {};
     if (flag.dev) w.print(",\"dev\":{d}", .{ent.dev}) catch {};
     if (flag.p) {
@@ -83,8 +83,8 @@ fn json_fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
             std.mem.span(prot(@intCast(ent.mode))),
         }) catch {};
     }
-    if (flag.u) w.print(",\"user\":\"{s}\"", .{std.mem.span(uidtoname(@intCast(ent.uid)))}) catch {};
-    if (flag.g) w.print(",\"group\":\"{s}\"", .{std.mem.span(gidtoname(@intCast(ent.gid)))}) catch {};
+    if (flag.u) w.print(",\"user\":\"{s}\"", .{std.mem.span(hash.uidtoname(@intCast(ent.uid)))}) catch {};
+    if (flag.g) w.print(",\"group\":\"{s}\"", .{std.mem.span(hash.gidtoname(@intCast(ent.gid)))}) catch {};
     if (flag.s) {
         if (flag.h or flag.si) {
             var nbuf: [64]u8 = undefined;
@@ -99,30 +99,28 @@ fn json_fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
     if (flag.D) w.print(",\"time\":\"{s}\"", .{std.mem.span(do_date(@intCast(if (flag.c) ent.ctime else ent.mtime)))}) catch {};
 }
 
-export fn json_intro() void {
+pub fn intro() void {
     var buf: [64]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
-    const nl: []const u8 = if (flag.noindent) "" else std.mem.span(_nl);
-    fw.interface.print("[{s}", .{nl}) catch {};
+    fw.interface.print("[{s}", .{nl()}) catch {};
 }
 
-export fn json_outtro() void {
+pub fn outtro() void {
     var buf: [64]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
-    const nl: []const u8 = if (flag.noindent) "" else std.mem.span(_nl);
-    fw.interface.print("{s}]\n", .{nl}) catch {};
+    fw.interface.print("{s}]\n", .{nl()}) catch {};
 }
 
-export fn json_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
+pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     var buf: [256]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
 
-    if (!flag.noindent) json_indent(&fw.interface, level);
+    if (!flag.noindent) indent(&fw.interface, level);
 
     const mt: c.mode_t = if (file) |f| @intCast(f.mode & @as(@TypeOf(f.mode), @intCast(c.S_IFMT))) else 0;
 
@@ -135,7 +133,7 @@ export fn json_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_in
     return 0;
 }
 
-export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
+pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     _ = dirname;
 
     var buf: [4096]u8 = undefined;
@@ -144,7 +142,7 @@ export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
     var direrr = false;
 
     fw.interface.writeAll(",\"name\":\"") catch {};
-    jsonEncode(&fw.interface, filename);
+    encode(&fw.interface, filename);
     fw.interface.writeByte('"') catch {};
 
     if (file) |f| {
@@ -152,7 +150,7 @@ export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
             fw.interface.writeAll(",\"info\":\"") catch {};
             var i: usize = 0;
             while (f.comment[i] != null) : (i += 1) {
-                jsonEncode(&fw.interface, f.comment[i]);
+                encode(&fw.interface, f.comment[i]);
                 if (f.comment[i + 1] != null) fw.interface.writeAll("\\n") catch {};
             }
             fw.interface.writeByte('"') catch {};
@@ -160,10 +158,10 @@ export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
 
         if (f.lnk != null) {
             fw.interface.writeAll(",\"target\":\"") catch {};
-            jsonEncode(&fw.interface, f.lnk);
+            encode(&fw.interface, f.lnk);
             fw.interface.writeByte('"') catch {};
         }
-        json_fillinfo(&fw.interface, f);
+        fillinfo(&fw.interface, f);
         direrr = f.isdir and f.err != null;
     }
 
@@ -176,7 +174,7 @@ export fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
     return if (descend != 0 or direrr) 1 else 0;
 }
 
-export fn json_error(err: [*c]u8) c_int {
+pub fn printerror(err: [*c]u8) c_int {
     var buf: [512]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -184,7 +182,7 @@ export fn json_error(err: [*c]u8) c_int {
     return 0;
 }
 
-export fn json_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
+pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = file;
     _ = level;
     _ = postdir;
@@ -192,32 +190,44 @@ export fn json_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcom
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
     const comma: []const u8 = if (needcomma != 0) "," else "";
-    fw.interface.print("{s}{s}", .{ comma, std.mem.span(_nl) }) catch {};
+    fw.interface.print("{s}{s}", .{ comma, nl() }) catch {};
 }
 
-export fn json_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
+pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = file;
 
     var buf: [256]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
 
-    if (!flag.noindent) json_indent(&fw.interface, level);
+    if (!flag.noindent) indent(&fw.interface, level);
     const comma: []const u8 = if (needcomma != 0) "," else "";
-    const nl: []const u8 = if (flag.noindent) "" else "\n";
-    fw.interface.print("]}}{s}{s}", .{ comma, nl }) catch {};
+    fw.interface.print("]}}{s}{s}", .{ comma, nl() }) catch {};
 }
 
-export fn json_report(tot: types.Totals) void {
+pub fn report(tot: types.Totals) void {
     var buf: [256]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
 
     fw.interface.writeByte(',') catch {};
-    json_indent(&fw.interface, 0);
+    indent(&fw.interface, 0);
     fw.interface.writeAll("{\"type\":\"report\"") catch {};
     if (flag.du) fw.interface.print(",\"size\":{d}", .{tot.size}) catch {};
     fw.interface.print(",\"directories\":{d}", .{tot.dirs}) catch {};
     if (!flag.d) fw.interface.print(",\"files\":{d}", .{tot.files}) catch {};
     fw.interface.writeByte('}') catch {};
+}
+
+pub fn ListingCalls() types.ListingCalls {
+    return .{
+        .intro = &intro,
+        .outtro = &outtro,
+        .printinfo = &printinfo,
+        .printfile = &printfile,
+        .@"error" = &printerror,
+        .newline = &newline,
+        .close = &close,
+        .report = &report,
+    };
 }

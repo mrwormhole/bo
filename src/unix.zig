@@ -7,6 +7,8 @@ const c = @cImport({
 });
 
 const types = @import("types.zig");
+const html = @import("html.zig");
+const info = @import("info.zig");
 extern var flag: types.Flags;
 extern var outfile: *std.fs.File;
 extern var dirs: [*c]c_int;
@@ -16,12 +18,10 @@ extern var authority: [*c]u8;
 
 extern fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8;
 extern fn indent(w: *std.Io.Writer, maxlevel: c_int) void;
-extern fn url_encode(w: *std.Io.Writer, s: [*c]u8) bool;
 extern fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void;
 extern fn printit(w: *std.Io.Writer, s: [*c]const u8) void;
 extern fn Ftype(mode: c.mode_t) u8;
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
-extern fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) void;
 // extern fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: bool, islink: bool) bool;
 //extern fn endcolor(w: *std.Io.Writer) void;
 
@@ -51,10 +51,10 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
 
 fn open_hyperlink(w: *std.Io.Writer, dirname: [*c]u8, filename: [*c]u8) void {
     w.print("\x1b]8;;{s}", .{std.mem.span(scheme)}) catch {};
-    _ = url_encode(w, authority);
+    _ = html.url_encode(w, authority);
     w.writeByte(':') catch {};
     emit_hyperlink_path(w, dirname);
-    _ = url_encode(w, filename);
+    _ = html.url_encode(w, filename);
     w.writeAll("\x1b\\") catch {};
 }
 
@@ -142,7 +142,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
                 fw.interface.splatByteAll(' ', infosize) catch {};
             }
             indent(&fw.interface, level);
-            printcomment(&fw.interface, line, lines, f.comment[line]);
+            info.printcomment(&fw.interface, line, lines, f.comment[line]);
         }
         dirs[@intCast(level + 1)] = 0;
     }
@@ -169,4 +169,22 @@ pub fn report(tot: types.Totals) void {
         const fnoun: []const u8 = if (tot.files == 1) "" else "s";
         fw.interface.print("{d} director{s}, {d} file{s}\n", .{ tot.dirs, dnoun, tot.files, fnoun }) catch {};
     }
+}
+
+const noop = struct {
+    fn intro() void {}
+    fn close(_: ?*types.Info, _: c_int, _: c_int) void {}
+};
+
+pub fn ListingCalls() types.ListingCalls {
+    return .{
+        .intro = &noop.intro,
+        .outtro = &noop.intro,
+        .printinfo = &printinfo,
+        .printfile = &printfile,
+        .@"error" = &printerror,
+        .newline = &newline,
+        .close = &noop.close,
+        .report = &report,
+    };
 }

@@ -11,9 +11,18 @@ const stat = @import("stat.zig");
 const pat = @import("pattern.zig");
 const types = @import("types.zig");
 const strverscmp = @import("strverscmp.zig").strverscmp;
-const parse_dir_colors = @import("color.zig").parse_dir_colors;
 const initlinedraw = @import("color.zig").initlinedraw;
-const fancy = @import("color.zig").fancy;
+const parsedircolors = @import("color.zig").parse_dir_colors;
+const json = @import("json.zig");
+const xml = @import("xml.zig");
+const html = @import("html.zig");
+const filter = @import("filter.zig");
+const info_mod = @import("info.zig");
+const file_mod = @import("file.zig");
+const util = @import("util.zig");
+const hash = @import("hash.zig");
+const help = @import("help.zig");
+const linux = @import("linux.zig");
 
 // ---------------------------------------------------------------------------
 // Function-type aliases matching the C typedefs in tree.h
@@ -30,79 +39,15 @@ extern var linedraw: [*c]const types.LineDraw;
 // Extern declarations for project-defined functions
 // ---------------------------------------------------------------------------
 
-// util.zig
-extern fn xmalloc(size: usize) ?*anyopaque;
-extern fn xrealloc(ptr: ?*anyopaque, size: usize) ?*anyopaque;
-extern fn scopy(s: [*c]const u8) [*c]u8;
-extern fn pathconcat(segs: [*c][*c]u8, n: c_int) [*c]u8;
-extern fn is_singleton(dir: *types.Info) bool;
-
-// hash.zig
-extern fn uidtoname(uid: c.uid_t) [*c]const u8;
-extern fn gidtoname(gid: c.gid_t) [*c]const u8;
-extern fn saveino(inode: c.ino_t, dev: c.dev_t) void;
-extern fn findino(inode: c.ino_t, dev: c.dev_t) bool;
-extern fn strhash(s: [*c]u8) [*c]u8;
-
-// filter.zig
-extern fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, ignorecase: bool) bool;
-extern fn push_filterstack(ig: ?*types.IgnoreFile) void;
-extern fn pop_filterstack() ?*types.IgnoreFile;
-extern fn gitignore_search(dir: [*c]const u8, depth: c_int) ?*types.IgnoreFile;
-extern fn new_ignorefile(dir: [*c]const u8, path: [*c]const u8, top: bool) ?*types.IgnoreFile;
-
-// info.zig
-extern fn infocheck(path: [*c]const u8, name: [*c]const u8, infotop: c_int, isdir: bool, ignorecase: bool) ?*types.Comment;
-extern fn push_infostack(inf: ?*types.InfoFile) void;
-extern fn pop_infostack() ?*types.InfoFile;
-extern fn new_infofile(dir: [*c]const u8, top: bool) ?*types.InfoFile;
-
 // color.zig
-//extern fn initlinedraw(force: bool) void;
-// extern fn parse_dir_colors() void;
 extern fn getcharset() [*c]const u8;
-//extern fn fancy(out: ?*c.FILE, s: [*c]u8) void; // uses its own FILE* (stderr/stdout), not outfile
 
 // list.zig
 // extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
 const emit_tree = @import("list.zig").emit_tree;
 
-// file.zig
-extern fn file_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
-extern fn tabedfile_getfulltree(d: [*c]u8, lev: c.u_long, dev: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info;
-
 // unix.zig
 const unix = @import("unix.zig");
-
-// json.zig
-extern fn json_intro() void;
-extern fn json_outtro() void;
-extern fn json_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
-extern fn json_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
-extern fn json_error(err: [*c]u8) c_int;
-extern fn json_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
-extern fn json_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
-extern fn json_report(tot: types.Totals) void;
-
-// xml.zig
-extern fn xml_intro() void;
-extern fn xml_outtro() void;
-extern fn xml_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
-extern fn xml_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
-extern fn xml_error(err: [*c]u8) c_int;
-extern fn xml_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
-extern fn xml_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
-extern fn xml_report(tot: types.Totals) void;
-
-// html.zig
-extern fn html_intro() void;
-extern fn html_outtro() void;
-extern fn html_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int;
-extern fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int;
-extern fn html_error(err: [*c]u8) c_int;
-extern fn html_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void;
-extern fn html_close(file: ?*types.Info, level: c_int, needcomma: c_int) void;
-extern fn html_report(tot: types.Totals) void;
 
 // ---------------------------------------------------------------------------
 // Globals
@@ -110,7 +55,6 @@ extern fn html_report(tot: types.Totals) void;
 export var version: [*c]const u8 = "bo (The Bodhi Tree) v0.0.5";
 
 export var flag: types.Flags = std.mem.zeroes(types.Flags);
-export var lc: types.ListingCalls = std.mem.zeroes(types.ListingCalls);
 
 export var pattern: c_int = 0;
 export var ipattern: c_int = 0;
@@ -120,7 +64,6 @@ export var ipatterns: [*c][*c]u8 = null;
 export var host: [*c]u8 = null;
 export var title: [*c]const u8 = "Directory Tree";
 export var sp: [*c]const u8 = " ";
-export var _nl: [*c]const u8 = "\n";
 export var Hintro: [*c]const u8 = null;
 export var Houtro: [*c]const u8 = null;
 export var scheme: [*c]u8 = @constCast("file://");
@@ -280,7 +223,7 @@ export fn printit(w: *std.Io.Writer, s: [*c]const u8) void {
     }
     if (mb_cur_max > 1) {
         const cs: usize = c.strlen(s) + 1;
-        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(xmalloc(@sizeOf(c.wchar_t) * cs)));
+        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c.wchar_t) * cs)));
         if (c.mbstowcs(ws, s, cs) != @as(usize, @bitCast(@as(isize, -1)))) {
             if (flag.Q) w.writeByte('"') catch {};
             var remaining: usize = cs;
@@ -388,8 +331,8 @@ export fn fillinfo(buf: [*c]u8, ent: ?*const types.Info) [*c]u8 {
     if (comptime builtin.os.tag == .linux) {
         if (flag.acl) n += c.sprintf(buf + @as(usize, @intCast(n)), "%c", @as(c_int, if (e.hasacl) '+' else ' '));
     }
-    if (flag.u) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", uidtoname(@intCast(e.uid)));
-    if (flag.g) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", gidtoname(@intCast(e.gid)));
+    if (flag.u) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", hash.uidtoname(@intCast(e.uid)));
+    if (flag.g) n += c.sprintf(buf + @as(usize, @intCast(n)), " %-8.32s", hash.gidtoname(@intCast(e.gid)));
     if (flag.s) n += psize(buf + @as(usize, @intCast(n)), @intCast(e.size));
     if (flag.D) n += c.sprintf(buf + @as(usize, @intCast(n)), " %s", do_date(@intCast(if (flag.c) e.ctime else e.mtime)));
     if (comptime builtin.os.tag == .linux) {
@@ -481,41 +424,13 @@ export fn fsizesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
 }
 
 // ---------------------------------------------------------------------------
-// Linux-specific helpers
-// ---------------------------------------------------------------------------
-
-fn has_acl(path: [*c]const u8) bool {
-    if (comptime builtin.os.tag != .linux) return false;
-    var buf: [c.PATH_MAX]u8 = undefined;
-    const n: isize = c.listxattr(path, &buf, c.PATH_MAX);
-    if (n <= 0) return false;
-
-    var key: [*c]u8 = &buf;
-    var i: usize = 0;
-    while (i < @as(usize, @intCast(n))) {
-        const len = c.strlen(key);
-        if (c.strcmp(key, "system.posix_acl_access") == 0) return true;
-        i += len + 1;
-        key += len + 1;
-    }
-    return false;
-}
-
-fn selinux_context(path: [*c]const u8) [*c]u8 {
-    if (comptime builtin.os.tag != .linux) return null;
-    const len: isize = c.getxattr(path, "security.selinux", &xpattern, c.PATH_MAX - 1);
-    xpattern[@intCast(if (len < 0) 0 else len)] = 0;
-    return strhash(&xpattern);
-}
-
-// ---------------------------------------------------------------------------
 // Filesystem functions
 // ---------------------------------------------------------------------------
 
 fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
     if (comptime builtin.os.tag == .linux) {
         var lst: std.os.linux.Stat = undefined;
-        if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &lst)) return false;
+        if (!linux.stat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &lst)) return false;
         ent.mode = @intCast(lst.mode);
         ent.uid = @intCast(lst.uid);
         ent.gid = @intCast(lst.gid);
@@ -551,7 +466,7 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (getinfo_lbuf == null) {
         getinfo_lbufsize = c.PATH_MAX;
-        getinfo_lbuf = @ptrCast(xmalloc(getinfo_lbufsize));
+        getinfo_lbuf = @ptrCast(util.xmalloc(getinfo_lbufsize));
     }
 
     var ent_storage: types.Info = std.mem.zeroes(types.Info);
@@ -567,7 +482,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
         if (comptime builtin.os.tag == .linux) {
             var lxst: std.os.linux.Stat = undefined;
-            if (stat.linuxStat(@ptrCast(path), 0, &lxst)) {
+            if (linux.stat(@ptrCast(path), 0, &lxst)) {
                 st_mode = @intCast(lxst.mode);
                 st_dev = @intCast(lxst.dev);
                 st_ino = @intCast(lxst.ino);
@@ -592,7 +507,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     const isdir: bool = (st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR);
 
-    if (flag.gitignore and filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
+    if (flag.gitignore and filter.filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
 
     if ((lst_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR) and !(flag.l and ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR)))) {
         if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, file_pathsep[0]) == 0) return null;
@@ -601,10 +516,10 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if (flag.d and ((st_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR))) return null;
 
-    const ent: *types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Info))));
+    const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
 
-    ent.name = scopy(name);
+    ent.name = util.scopy(name);
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
@@ -623,8 +538,8 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     ent.mtime = ent_storage.mtime;
 
     if (comptime builtin.os.tag == .linux) {
-        if (flag.acl) ent.hasacl = has_acl(path);
-        if (flag.selinux) ent.secontext = selinux_context(path) else ent.secontext = null;
+        if (flag.acl) ent.hasacl = linux.has_acl(path);
+        if (flag.selinux) ent.secontext = linux.selinux_context(path, xpattern) else ent.secontext = null;
     }
 
     ent.isdir = isdir;
@@ -637,16 +552,16 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
         const lst_size: usize = @intCast(ent_storage.size);
         if (lst_size + 1 > getinfo_lbufsize) {
             getinfo_lbufsize = lst_size + 8192;
-            getinfo_lbuf = @ptrCast(xrealloc(getinfo_lbuf, getinfo_lbufsize));
+            getinfo_lbuf = @ptrCast(util.xrealloc(getinfo_lbuf, getinfo_lbufsize));
         }
         const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
         if (len < 0) {
-            ent.lnk = scopy("[Error reading symbolic link information]");
+            ent.lnk = util.scopy("[Error reading symbolic link information]");
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = scopy(getinfo_lbuf);
+            ent.lnk = util.scopy(getinfo_lbuf);
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -662,6 +577,9 @@ export fn free_dir(d: [*c][*c]types.Info) void {
     while (d[i] != null) : (i += 1) {
         c.free(d[i].*.name);
         if (d[i].*.lnk != null) c.free(d[i].*.lnk);
+        if (comptime builtin.os.tag == .linux) {
+            if (d[i].*.secontext != null) c.free(d[i].*.secontext);
+        }
         if (d[i].*.comment != null) {
             var j: usize = 0;
             while (d[i].*.comment[j] != null) : (j += 1) c.free(d[i].*.comment[j]);
@@ -675,7 +593,7 @@ export fn free_dir(d: [*c][*c]types.Info) void {
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info {
     if (read_dir_path == null) {
         read_dir_pathsize = c.strlen(dir) + c.PATH_MAX;
-        read_dir_path = @ptrCast(xmalloc(read_dir_pathsize));
+        read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
     }
 
     const es: bool = dir[c.strlen(dir) - 1] == '/';
@@ -684,7 +602,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
     if (d == null) return null;
 
     var ne: usize = c.MINIT;
-    var dl: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * ne)));
+    var dl: [*c][*c]types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]types.Info) * ne)));
     var p: usize = 0;
 
     while (true) {
@@ -699,7 +617,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
         const elen = c.strlen(dname);
         if (dlen + elen + 2 > read_dir_pathsize) {
             read_dir_pathsize = dlen + elen + c.PATH_MAX;
-            read_dir_path = @ptrCast(xrealloc(read_dir_path, read_dir_pathsize));
+            read_dir_path = @ptrCast(util.xrealloc(read_dir_path, read_dir_pathsize));
         }
         if (es) {
             _ = c.sprintf(read_dir_path, "%s%s", dir, dname);
@@ -711,18 +629,18 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
         if (info) |inf| {
             var com: ?*types.Comment = null;
             if (flag.showinfo) {
-                com = infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
+                com = info_mod.infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
             }
             if (com != null) {
                 var cnt: usize = 0;
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                inf.comment = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
+                inf.comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = scopy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.scopy(com.?.desc[ci]);
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(xrealloc(@ptrCast(dl), @sizeOf([*c]types.Info) * (ne + c.MINC))));
+                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf([*c]types.Info) * (ne + c.MINC))));
                 ne += c.MINC;
             }
             dl[p] = inf;
@@ -750,21 +668,21 @@ export fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*t
             const stmp = c.getenv("GIT_DIR");
             if (stmp != null) {
                 var segs = [_][*c]u8{ &path_buf, stmp, @constCast("info/exclude") };
-                push_filterstack(new_ignorefile(stmp, pathconcat(@ptrCast(&segs), 3), false));
-                tig = new_ignorefile(stmp, pathconcat(@ptrCast(&segs), 3), false);
+                filter.push_filterstack(filter.new_ignorefile(stmp, util.pathconcat(@ptrCast(&segs), 3), false));
+                tig = filter.new_ignorefile(stmp, util.pathconcat(@ptrCast(&segs), 3), false);
             }
         }
         if (top) {
-            ig.* = gitignore_search(dir, 0);
+            ig.* = filter.gitignore_search(dir, 0);
         } else {
-            ig.* = new_ignorefile(dir, dir, top);
-            push_filterstack(ig.*);
+            ig.* = filter.new_ignorefile(dir, dir, top);
+            filter.push_filterstack(ig.*);
         }
         if (ig.* == null) ig.* = tig;
     }
     if (flag.showinfo) {
-        inf.* = new_infofile(dir, top);
-        push_infostack(inf.*);
+        inf.* = info_mod.new_infofile(dir, top);
+        info_mod.push_infostack(inf.*);
     }
 }
 
@@ -784,7 +702,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     if (flag.xdev and lev == 0) {
         if (comptime builtin.os.tag == .linux) {
             var lst: std.os.linux.Stat = undefined;
-            if (stat.linuxStat(@ptrCast(d), 0, &lst)) {
+            if (linux.stat(@ptrCast(d), 0, &lst)) {
                 dev = @intCast(lst.dev);
             }
         } else {
@@ -804,7 +722,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     dir_ptr = sav;
 
     if (dir_ptr == null and n != 0) {
-        err.* = scopy("error opening dir");
+        err.* = util.scopy("error opening dir");
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
@@ -814,11 +732,11 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         return null;
     }
     pathsize = c.PATH_MAX;
-    path = @ptrCast(xmalloc(pathsize));
+    path = @ptrCast(util.xmalloc(pathsize));
 
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = scopy(path);
+        err.* = util.scopy(path);
         free_dir(sav);
         c.free(path);
         if (tmp_pattern != 0) pattern = tmp_pattern;
@@ -826,7 +744,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     }
 
     if (lev >= maxdirs - 1) {
-        dirs = @ptrCast(@alignCast(xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
+        dirs = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
         maxdirs += 1024;
     }
 
@@ -835,10 +753,10 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         if (entry.*.isdir and !(flag.xdev and dev != @as(c.dev_t, @intCast(entry.*.dev)))) {
             if (entry.*.lnk != null) {
                 if (flag.l) {
-                    if (findino(@intCast(entry.*.inode), @intCast(entry.*.dev))) {
-                        entry.*.err = scopy("recursive, not followed");
+                    if (hash.findino(@intCast(entry.*.inode), @intCast(entry.*.dev))) {
+                        entry.*.err = util.scopy("recursive, not followed");
                     } else {
-                        saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
+                        hash.saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
                         if (entry.*.lnk[0] == '/') {
                             entry.*.child = unix_getfulltree(entry.*.lnk, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
                         } else {
@@ -846,7 +764,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                             const llen = c.strlen(entry.*.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
-                                path = @ptrCast(xrealloc(path, pathsize));
+                                path = @ptrCast(util.xrealloc(path, pathsize));
                             }
                             if (flag.f and c.strcmp(d, "/") == 0) {
                                 _ = c.sprintf(path, "%s%s", d, entry.*.lnk);
@@ -862,7 +780,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                 const nlen = c.strlen(entry.*.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
-                    path = @ptrCast(xrealloc(path, pathsize));
+                    path = @ptrCast(util.xrealloc(path, pathsize));
                 }
 
                 if (flag.f and c.strcmp(d, "/") == 0) {
@@ -871,16 +789,16 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
                     _ = c.sprintf(path, "%s/%s", d, entry.*.name);
                 }
 
-                saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
+                hash.saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
                 entry.*.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
 
                 if (flag.condense_singletons) {
-                    while (is_singleton(@ptrCast(entry))) {
+                    while (util.is_singleton(@ptrCast(entry))) {
                         const child = entry.*.child;
                         var segs = [_][*c]u8{ entry.*.name, child[0].*.name };
-                        const new_name = pathconcat(@ptrCast(&segs), 2);
+                        const new_name = util.pathconcat(@ptrCast(&segs), 2);
                         c.free(entry.*.name);
-                        entry.*.name = scopy(new_name);
+                        entry.*.name = util.scopy(new_name);
                         entry.*.child = child[0].*.child;
                         entry.*.condensed = entry.*.condensed + 1 + child[0].*.condensed;
                         free_dir(child);
@@ -919,8 +837,8 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         free_dir(sav);
         return null;
     }
-    if (ig != null) _ = pop_filterstack();
-    if (inf != null) _ = pop_infostack();
+    if (ig != null) _ = filter.pop_filterstack();
+    if (inf != null) _ = info_mod.pop_infostack();
     return sav;
 }
 
@@ -957,128 +875,6 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
     return ret;
 }
 
-fn print_usage() void {
-    parse_dir_colors();
-    initlinedraw(false);
-    var ubuf: [1024]u8 = undefined;
-    var ufw = std.fs.File.stderr().writer(&ubuf);
-    defer ufw.interface.flush() catch {};
-
-    fancy(&ufw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
-        "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
-        "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
-        "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
-        "\t[\x08--sort\r[\x08=\r]\x0cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0c#\r] [\x08--si\r]\n" ++
-        "\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0cX\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n" ++
-        "\t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0cfile\r] [\x08--noreport\r]\n" ++
-        "\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0cschema\r] [\x08--authority\r[\x08=\r]\x0chost\r] [\x08--opt-toggle\r]\n" ++
-        "\t[\x08--compress\r[\x08=\r]\x0c#\r] [\x08--condense\r] [\x08--version\r] [\x08--help\r]" ++
-        (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
-        "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
-}
-
-fn print_help() void {
-    parse_dir_colors();
-    initlinedraw(false);
-    var hbuf: [4096]u8 = undefined;
-    var hfw = std.fs.File.stdout().writer(&hbuf);
-    defer hfw.interface.flush() catch {};
-
-    fancy(&hfw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
-        "\t[\x08-T\r \x0ctitle\r] [\x08-o\r \x0cfilename\r] [\x08-P\r \x0cpattern\r] [\x08-I\r \x0cpattern\r] [\x08--gitignore\r]\n" ++
-        "\t[\x08--gitfile\r[\x08=\r]\x0cfile\r] [\x08--matchdirs\r] [\x08--metafirst\r] [\x08--ignore-case\r]\n" ++
-        "\t[\x08--nolinks\r] [\x08--hintro\r[\x08=\r]\x0cfile\r] [\x08--houtro\r[\x08=\r]\x0cfile\r] [\x08--inodes\r] [\x08--device\r]\n" ++
-        "\t[\x08--sort\r[\x08=\r]\x0cname\r] [\x08--dirsfirst\r] [\x08--filesfirst\r] [\x08--filelimit\r[\x08=\r]\x0c#\r] [\x08--si\r]\n" ++
-        "\t[\x08--du\r] [\x08--prune\r] [\x08--charset\r[\x08=\r]\x0cX\r] [\x08--timefmt\r[\x08=\r]\x0cformat\r] [\x08--fromfile\r]\n" ++
-        "\t[\x08--fromtabfile\r] [\x08--fflinks\r] [\x08--info\r] [\x08--infofile\r[\x08=\r]\x0cfile\r] [\x08--noreport\r]\n" ++
-        "\t[\x08--hyperlink\r] [\x08--scheme\r[\x08=\r]\x0cschema\r] [\x08--authority\r[\x08=\r]\x0chost\r] [\x08--opt-toggle\r]\n" ++
-        "\t[\x08--compress\r[\x08=\r]\x0c#\r] [\x08--condense\r] [\x08--version\r] [\x08--help\r]" ++
-        (if (comptime builtin.os.tag == .linux) " [\x08--acl\r] [\x08--selinux\r]\n" else "\n") ++
-        "\t[\x08--\r] [\x0cdirectory\r \x08...\r]\n"));
-
-    fancy(&hfw.interface, @constCast("  \x08------- Listing options -------\r\n" ++
-        "  \x08-a\r            All files are listed.\n" ++
-        "  \x08-d\r            List directories only.\n" ++
-        "  \x08-l\r            Follow symbolic links like directories.\n" ++
-        "  \x08-f\r            Print the full path prefix for each file.\n" ++
-        "  \x08-x\r            Stay on current filesystem only.\n" ++
-        "  \x08-L\r \x0clevel\r      Descend only \x0clevel\r directories deep.\n" ++
-        "  \x08-R\r            Rerun tree when max dir level reached.\n" ++
-        "  \x08-P\r \x0cpattern\r    List only those files that match the pattern given.\n" ++
-        "  \x08-I\r \x0cpattern\r    Do not list files that match the given pattern.\n" ++
-        "  \x08--gitignore\r   Filter by using \x08.gitignore\r files.\n" ++
-        "  \x08--gitfile\r \x0cX\r   Explicitly read a gitignore file.\n" ++
-        "  \x08--ignore-case\r Ignore case when pattern matching.\n" ++
-        "  \x08--matchdirs\r   Include directory names in \x08-P\r pattern matching.\n" ++
-        "  \x08--metafirst\r   Print meta-data at the beginning of each line.\n" ++
-        "  \x08--prune\r       Prune empty directories from the output.\n" ++
-        "  \x08--info\r        Print information about files found in \x08.info\r files.\n" ++
-        "  \x08--infofile\r \x0cX\r  Explicitly read info file.\n" ++
-        "  \x08--noreport\r    Turn off file/directory count at end of tree listing.\n" ++
-        "  \x08--charset\r \x0cX\r   Use charset \x0cX\r for terminal/HTML and indentation line output.\n" ++
-        "  \x08--filelimit\r \x0c#\r Do not descend dirs with more than \x0c#\r files in them.\n" ++
-        "  \x08--condense\r    Condense directory singletons to a single line of output.\n" ++
-        "  \x08-o\r \x0cfilename\r   Output to file instead of stdout.\n" ++
-        "  \x08------- File options -------\r\n" ++
-        "  \x08-q\r            Print non-printable characters as '\x08?\r'.\n" ++
-        "  \x08-N\r            Print non-printable characters as is.\n" ++
-        "  \x08-Q\r            Quote filenames with double quotes.\n" ++
-        "  \x08-p\r            Print the protections for each file.\n" ++
-        "  \x08-u\r            Displays file owner or UID number.\n" ++
-        "  \x08-g\r            Displays file group owner or GID number.\n" ++
-        "  \x08-s\r            Print the size in bytes of each file.\n" ++
-        "  \x08-h\r            Print the size in a more human readable way.\n" ++
-        "  \x08--si\r          Like \x08-h\r, but use in SI units (powers of 1000).\n" ++
-        "  \x08--du\r          Compute size of directories by their contents.\n" ++
-        "  \x08-D\r            Print the date of last modification or (-c) status change.\n" ++
-        "  \x08--timefmt\r \x0cfmt\r Print and format time according to the format \x0cfmt\r.\n" ++
-        "  \x08-F\r            Appends '\x08/\r', '\x08=\r', '\x08*\r', '\x08@\r', '\x08|\r' or '\x08>\r' as per \x08ls -F\r.\n" ++
-        "  \x08--inodes\r      Print inode number of each file.\n" ++
-        "  \x08--device\r      Print device ID number to which each file belongs.\n" ++
-        (if (comptime builtin.os.tag == .linux)
-            "  \x08--acl\r         Print permissions with a + if an ACL is present.\n" ++
-                "  \x08--selinux\r     Print the selinux security label if present.\n"
-        else
-            "")));
-
-    fancy(&hfw.interface, @constCast("  \x08------- Sorting options -------\r\n" ++
-        "  \x08-v\r            Sort files alphanumerically by version.\n" ++
-        "  \x08-t\r            Sort files by last modification time.\n" ++
-        "  \x08-c\r            Sort files by last status change time.\n" ++
-        "  \x08-U\r            Leave files unsorted.\n" ++
-        "  \x08-r\r            Reverse the order of the sort.\n" ++
-        "  \x08--dirsfirst\r   List directories before files (\x08-U\r disables).\n" ++
-        "  \x08--filesfirst\r  List files before directories (\x08-U\r disables).\n" ++
-        "  \x08--sort\r \x0cX\r      Select sort: \x08\x0cname\r,\x08\x0cversion\r,\x08\x0csize\r,\x08\x0cmtime\r,\x08\x0cctime\r,\x08\x0cnone\r.\n" ++
-        "  \x08------- Graphics options -------\r\n" ++
-        "  \x08-i\r            Don't print indentation lines.\n" ++
-        "  \x08-A\r            Print ANSI lines graphic indentation lines.\n" ++
-        "  \x08-S\r            Print with CP437 (console) graphics indentation lines.\n" ++
-        "  \x08-n\r            Turn colorization off always (\x08-C\r overrides).\n" ++
-        "  \x08-C\r            Turn colorization on always.\n" ++
-        "  \x08--compress\r \x0c#\r  Compress indentation lines.\n" ++
-        "  \x08------- XML/HTML/JSON/HYPERLINK options -------\r\n" ++
-        "  \x08-X\r            Prints out an XML representation of the tree.\n" ++
-        "  \x08-J\r            Prints out an JSON representation of the tree.\n" ++
-        "  \x08-H\r \x0cbaseHREF\r   Prints out HTML format with \x0cbaseHREF\r as top directory.\n" ++
-        "  \x08-T\r \x0cstring\r     Replace the default HTML title and H1 header with \x0cstring\r.\n" ++
-        "  \x08--nolinks\r     Turn off hyperlinks in HTML output.\n" ++
-        "  \x08--hintro\r \x0cX\r    Use file \x0cX\r as the HTML intro.\n" ++
-        "  \x08--houtro\r \x0cX\r    Use file \x0cX\r as the HTML outro.\n" ++
-        "  \x08--hyperlink\r   Turn on OSC 8 terminal hyperlinks.\n" ++
-        "  \x08--scheme\r \x0cX\r    Set OSC 8 hyperlink scheme, default \x08\x0cfile://\r\n" ++
-        "  \x08--authority\r \x0cX\r Set OSC 8 hyperlink authority/hostname.\n" ++
-        "  \x08------- Input options -------\r\n" ++
-        "  \x08--fromfile\r    Reads paths from files (\x08.\r=stdin)\n" ++
-        "  \x08--fromtabfile\r Reads trees from tab indented files (\x08.\r=stdin)\n" ++
-        "  \x08--fflinks\r     Process link information when using \x08--fromfile\r.\n" ++
-        "  \x08------- Miscellaneous options -------\r\n" ++
-        "  \x08--opt-toggle\r  Enable option toggling.\n" ++
-        "  \x08--version\r     Print version and exit.\n" ++
-        "  \x08--help\r        Print usage and this help message and exit.\n" ++
-        "  \x08--\r            Options processing terminator.\n"));
-}
-
 pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     _outfile = std.fs.File.stdout();
     var dirname: [*c][*c]u8 = null;
@@ -1105,7 +901,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(types.Flags)], 0);
 
     maxdirs = c.PATH_MAX;
-    dirs = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * maxdirs)));
+    dirs = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * maxdirs)));
     @memset(@as([*]u8, @ptrCast(dirs))[0 .. @sizeOf(c_int) * maxdirs], 0);
     dirs[0] = 0;
     Level = -1;
@@ -1121,21 +917,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
         }
     }
 
-    const noop = struct {
-        fn noop() void {}
-        fn close(_: ?*types.Info, _: c_int, _: c_int) void {}
-    };
-
-    lc = types.ListingCalls{
-        .intro = &noop.noop,
-        .outtro = &noop.noop,
-        .printinfo = &unix.printinfo,
-        .printfile = &unix.printfile,
-        .@"error" = &unix.printerror,
-        .newline = &unix.newline,
-        .close = &noop.close,
-        .report = &unix.report,
-    };
+    var lc: types.ListingCalls = unix.ListingCalls();
 
     mb_cur_max = getMbCurMax();
 
@@ -1147,17 +929,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
             if (c.fcntl(std_fd, c.F_GETFD) >= 0) {
                 flag.J = true;
                 flag.noindent = true;
-                _nl = "";
-                lc = types.ListingCalls{
-                    .intro = &json_intro,
-                    .outtro = &json_outtro,
-                    .printinfo = &json_printinfo,
-                    .printfile = &json_printfile,
-                    .@"error" = &json_error,
-                    .newline = &json_newline,
-                    .close = &json_close,
-                    .report = &json_report,
-                };
+                lc = json.ListingCalls();
                 _outfile = .{ .handle = @intCast(std_fd) };
             }
         }
@@ -1189,7 +961,6 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                     'p' => flag.p = if (opt_toggle) !flag.p else true,
                     'i' => {
                         flag.noindent = if (opt_toggle) !flag.noindent else true;
-                        _nl = "";
                     },
                     'C' => flag.force_color = if (opt_toggle) !flag.force_color else true,
                     'n' => flag.nocolor = if (opt_toggle) !flag.nocolor else true,
@@ -1225,46 +996,19 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                         flag.X = true;
                         flag.H = false;
                         flag.J = false;
-                        lc = types.ListingCalls{
-                            .intro = &xml_intro,
-                            .outtro = &xml_outtro,
-                            .printinfo = &xml_printinfo,
-                            .printfile = &xml_printfile,
-                            .@"error" = &xml_error,
-                            .newline = &xml_newline,
-                            .close = &xml_close,
-                            .report = &xml_report,
-                        };
+                        lc = xml.ListingCalls();
                     },
                     'J' => {
                         flag.J = true;
                         flag.X = false;
                         flag.H = false;
-                        lc = types.ListingCalls{
-                            .intro = &json_intro,
-                            .outtro = &json_outtro,
-                            .printinfo = &json_printinfo,
-                            .printfile = &json_printfile,
-                            .@"error" = &json_error,
-                            .newline = &json_newline,
-                            .close = &json_close,
-                            .report = &json_report,
-                        };
+                        lc = json.ListingCalls();
                     },
                     'H' => {
                         flag.H = true;
                         flag.X = false;
                         flag.J = false;
-                        lc = types.ListingCalls{
-                            .intro = &html_intro,
-                            .outtro = &html_outtro,
-                            .printinfo = &html_printinfo,
-                            .printfile = &html_printfile,
-                            .@"error" = &html_error,
-                            .newline = &html_newline,
-                            .close = &html_close,
-                            .report = &html_report,
-                        };
+                        lc = html.ListingCalls();
                         if (argv[n] == null) {
                             _ = c.fprintf(cStderr(), "tree: Missing argument to -H option.\n");
                             c.exit(c.EXIT_FAILURE);
@@ -1326,7 +1070,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 break;
                             }
                             if (c.strcmp("--help", argv[i]) == 0) {
-                                print_help();
+                                help.print();
                                 c.exit(c.EXIT_SUCCESS);
                             }
                             if (c.strcmp("--version", argv[i]) == 0) {
@@ -1394,7 +1138,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             arg = longArg(argv, i, &j, &n, "--timefmt");
                             if (arg != null) {
-                                timefmt = scopy(arg);
+                                timefmt = util.scopy(arg);
                                 flag.D = true;
                                 break;
                             }
@@ -1431,13 +1175,13 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             if (c.strcmp("--fromtabfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &tabedfile_getfulltree;
+                                getfulltree = &file_mod.tabedfile_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--fromfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &file_getfulltree;
+                                getfulltree = &file_mod.file_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--metafirst", argv[i]) == 0) {
@@ -1448,8 +1192,8 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             arg = longArg(argv, i, &j, &n, "--gitfile");
                             if (arg != null) {
                                 flag.gitignore = true;
-                                const new_ig = new_ignorefile(arg, arg, false);
-                                if (new_ig != null) push_filterstack(new_ig) else {
+                                const new_ig = filter.new_ignorefile(arg, arg, false);
+                                if (new_ig != null) filter.push_filterstack(new_ig) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load gitignore file\n");
                                     c.exit(c.EXIT_FAILURE);
                                 }
@@ -1468,8 +1212,8 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             arg = longArg(argv, i, &j, &n, "--infofile");
                             if (arg != null) {
                                 flag.showinfo = true;
-                                const new_inf = new_infofile(arg, false);
-                                if (new_inf != null) push_infostack(new_inf) else {
+                                const new_inf = info_mod.new_infofile(arg, false);
+                                if (new_inf != null) info_mod.push_infostack(new_inf) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load infofile\n");
                                     c.exit(c.EXIT_FAILURE);
                                 }
@@ -1477,12 +1221,12 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             }
                             arg = longArg(argv, i, &j, &n, "--hintro");
                             if (arg != null) {
-                                Hintro = scopy(arg);
+                                Hintro = util.scopy(arg);
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--houtro");
                             if (arg != null) {
-                                Houtro = scopy(arg);
+                                Houtro = util.scopy(arg);
                                 break;
                             }
                             if (c.strcmp("--fflinks", argv[i]) == 0) {
@@ -1499,15 +1243,15 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                             if (arg != null) {
                                 if (c.strchr(arg, ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
-                                    arg = scopy(&xpattern);
+                                    arg = util.scopy(&xpattern);
                                 } else {
-                                    scheme = scopy(arg);
+                                    scheme = util.scopy(arg);
                                 }
                                 break;
                             }
                             arg = longArg(argv, i, &j, &n, "--authority");
                             if (arg != null) {
-                                if (c.strcmp(arg, ".") == 0) authority = scopy("") else authority = scopy(arg);
+                                if (c.strcmp(arg, ".") == 0) authority = util.scopy("") else authority = util.scopy(arg);
                                 break;
                             }
                             if (c.strcmp("--opt-toggle", argv[i]) == 0) {
@@ -1530,7 +1274,6 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 if (flag.compress_indent > 3) {
                                     flag.compress_indent = 0;
                                     flag.noindent = true;
-                                    _nl = "";
                                 }
                                 if (flag.compress_indent > 0) flag.compress_indent -= 1;
                                 break;
@@ -1549,29 +1292,29 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
                                 }
                             }
                             _ = c.fprintf(cStderr(), "tree: Invalid argument `%s'.\n", argv[i]);
-                            print_usage();
+                            help.print_all();
                             c.exit(c.EXIT_FAILURE);
                         }
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
-                        print_usage();
+                        help.print_all();
                         c.exit(c.EXIT_FAILURE);
                     },
                     else => {
                         _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
-                        print_usage();
+                        help.print_all();
                         c.exit(c.EXIT_FAILURE);
                     },
                 }
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
+                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
                 q = c.MINIT;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
+                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
                 q += c.MINC;
             }
-            dirname[p] = scopy(argv[i]);
+            dirname[p] = util.scopy(argv[i]);
             p += 1;
         }
     }
@@ -1591,7 +1334,7 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
         };
     }
 
-    parse_dir_colors();
+    parsedircolors();
     initlinedraw(false);
 
     if (showversion) {
@@ -1603,8 +1346,8 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
     }
 
     if (dirname == null) {
-        dirname = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * 2)));
-        dirname[0] = scopy(".");
+        dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * 2)));
+        dirname[0] = util.scopy(".");
         dirname[1] = null;
     }
     if (topsort == null) topsort = basesort;
@@ -1618,12 +1361,12 @@ pub fn run(gpa: std.mem.Allocator, argc: c_int, argv: [*c][*c]u8) c_int {
             _ = c.fprintf(cStderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
-            authority = scopy(&xpattern);
+            authority = util.scopy(&xpattern);
         }
     }
 
     if (flag.showinfo) {
-        push_infostack(new_infofile(c.INFO_PATH, false));
+        info_mod.push_infostack(info_mod.new_infofile(c.INFO_PATH, false));
     }
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;

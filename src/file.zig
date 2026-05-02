@@ -8,6 +8,9 @@ const c = @cImport({
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
+const util = @import("util.zig");
+const filter = @import("filter.zig");
+const info_mod = @import("info.zig");
 
 extern var flag: types.Flags;
 extern var pattern: c_int;
@@ -21,16 +24,8 @@ extern var file_pathsep: [*c]u8;
 extern var patterns: [*c][*c]u8;
 extern var ipatterns: [*c][*c]u8;
 
-extern fn xmalloc(size: usize) *anyopaque;
-extern fn scopy(s: [*c]const u8) [*c]u8;
 extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
-extern fn flush_filterstack() ?*types.IgnoreFile;
-extern fn pop_infostack() ?*types.InfoFile;
-extern fn filtercheck(path: [*c]const u8, name: [*c]const u8, isdir: c_int, ignore_case: bool) bool;
-extern fn infocheck(path: [*c]const u8, name: [*c]const u8, top: c_int, isdir: bool, ignore_case: bool) ?*types.Comment;
-extern fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8;
 extern fn free_dir(d: [*c][*c]types.Info) void;
-extern fn is_singleton(dir: *types.Info) bool;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
 
@@ -84,9 +79,9 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
 }
 
 fn newent(name: [*c]const u8) *types.Info {
-    const n: *types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Info))));
+    const n: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(types.Info)], 0);
-    n.name = scopy(name);
+    n.name = util.scopy(name);
     n.child = null;
     n.tchild = null;
     n.next = null;
@@ -140,7 +135,7 @@ fn fprune(
     var matched = matched_in;
     var tmp_pattern: c_int = 0;
 
-    const fpath: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
+    const fpath: [*c]u8 = @ptrCast(@alignCast(util.xmalloc(MAXPATH)));
     defer std.c.free(fpath);
 
     const path_len = c.strlen(path);
@@ -200,18 +195,18 @@ fn fprune(
             }
         }
 
-        if (flag.gitignore and filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir), flag.ignorecase)) {
+        if (flag.gitignore and filter.filtercheck(path, ent[0].name, @intFromBool(ent[0].isdir), flag.ignorecase)) {
             show = false;
         }
 
         if (show and flag.showinfo) {
-            const com = infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
+            const com = info_mod.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
             if (com != null) {
                 var i: usize = 0;
                 while (com.?.desc[i] != null) : (i += 1) {}
-                ent[0].comment = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (i + 1))));
+                ent[0].comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (i + 1))));
                 var j: usize = 0;
-                while (j < i) : (j += 1) ent[0].comment[j] = scopy(com.?.desc[j]);
+                while (j < i) : (j += 1) ent[0].comment[j] = util.scopy(com.?.desc[j]);
                 ent[0].comment[i] = null;
             }
         }
@@ -225,12 +220,12 @@ fn fprune(
         }
 
         if (flag.condense_singletons) {
-            while (is_singleton(@ptrCast(ent))) {
+            while (util.is_singleton(@ptrCast(ent))) {
                 const child = ent[0].child;
                 var segs = [_][*c]const u8{ ent[0].name, child[0][0].name };
-                const name = pathconcat(@ptrCast(&segs), 2);
+                const name = util.pathconcat(@ptrCast(&segs), 2);
                 std.c.free(ent[0].name);
-                ent[0].name = scopy(name);
+                ent[0].name = util.scopy(name);
                 ent[0].child = child[0][0].child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0][0].condensed;
                 free_dir(@ptrCast(child));
@@ -262,7 +257,7 @@ fn fprune(
     if (end != null) end[0].next = null;
 
     if (count > 0) {
-        const arr: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * (count + 1))));
+        const arr: [*c][*c]types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]types.Info) * (count + 1))));
         var i: usize = 0;
         var e: [*c]types.Info = new_head;
         while (e != null) : (i += 1) {
@@ -278,19 +273,19 @@ fn fprune(
         dir = arr;
     }
 
-    if (ig != null) ig = @ptrCast(flush_filterstack());
-    if (inf != null) inf = @ptrCast(pop_infostack());
+    if (ig != null) ig = @ptrCast(filter.flush_filterstack());
+    if (inf != null) inf = @ptrCast(info_mod.pop_infostack());
 
     return dir;
 }
 
-export fn file_getfulltree(
+pub fn file_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
     size: [*c]c.off_t,
     err: [*c][*c]u8,
-) [*c][*c]types.Info {
+) callconv(.c) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -305,7 +300,7 @@ export fn file_getfulltree(
     }
 
     var root: [*c]types.Info = null;
-    const path: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
+    const path: [*c]u8 = @ptrCast(@alignCast(util.xmalloc(MAXPATH)));
     defer std.c.free(path);
 
     while (c.fgets(path, MAXPATH, fp) != null) {
@@ -356,7 +351,7 @@ export fn file_getfulltree(
         if (ent != null and link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(c.S_IFLNK);
-            ent[0].lnk = scopy(link + 4);
+            ent[0].lnk = util.scopy(link + 4);
         }
     }
 
@@ -366,13 +361,13 @@ export fn file_getfulltree(
     return fprune(root, "", false, true);
 }
 
-export fn tabedfile_getfulltree(
+pub fn tabedfile_getfulltree(
     d: [*c]u8,
     lev: c.u_long,
     dev: c.dev_t,
     size: [*c]c.off_t,
     err: [*c][*c]u8,
-) [*c][*c]types.Info {
+) callconv(.c) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -388,9 +383,9 @@ export fn tabedfile_getfulltree(
 
     var root: [*c]types.Info = null;
     const maxstack: usize = 2048;
-    const path: [*c]u8 = @ptrCast(@alignCast(xmalloc(MAXPATH)));
+    const path: [*c]u8 = @ptrCast(@alignCast(util.xmalloc(MAXPATH)));
     defer std.c.free(path);
-    const istack: [*c][*c]types.Info = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]types.Info) * maxstack)));
+    const istack: [*c][*c]types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]types.Info) * maxstack)));
     defer std.c.free(@ptrCast(istack));
     @memset(@as([*]u8, @ptrCast(istack))[0 .. @sizeOf([*c]types.Info) * maxstack], 0);
 
@@ -445,7 +440,7 @@ export fn tabedfile_getfulltree(
         if (link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(c.S_IFLNK);
-            ent[0].lnk = scopy(link + 4);
+            ent[0].lnk = util.scopy(link + 4);
         }
         top = tabs;
     }

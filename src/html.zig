@@ -36,7 +36,7 @@ fn classOf(info: *types.Info) [*c]const u8 {
     return "NORM";
 }
 
-export fn html_encode(w: *std.Io.Writer, s_in: [*c]u8) void {
+pub fn encode(w: *std.Io.Writer, s_in: [*c]u8) void {
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         switch (s[0]) {
@@ -49,7 +49,7 @@ export fn html_encode(w: *std.Io.Writer, s_in: [*c]u8) void {
     }
 }
 
-export fn url_encode(w: *std.Io.Writer, s_in: [*c]u8) bool {
+pub fn url_encode(w: *std.Io.Writer, s_in: [*c]u8) bool {
     const unreserved = "/-._~";
     var s = s_in;
     var slash = false;
@@ -77,7 +77,7 @@ fn fcat(w: *std.Io.Writer, filename: [*c]const u8) void {
     }
 }
 
-export fn html_intro() void {
+pub fn intro() void {
     var buf: [4096]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -123,7 +123,7 @@ export fn html_intro() void {
     ++ "\t<h1>{s}</h1><p>\n", .{ ttl, ttl }) catch {};
 }
 
-export fn html_outtro() void {
+pub fn outtro() void {
     var buf: [256]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -149,7 +149,7 @@ fn htmlPrint(w: *std.Io.Writer, s_in: [*c]const u8) void {
     w.writeAll(sp_s) catch {};
 }
 
-export fn html_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
+pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     var info: [512]u8 = undefined;
@@ -179,7 +179,7 @@ export fn html_printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_in
     return 0;
 }
 
-export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
+pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     var buf: [4096]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -191,7 +191,7 @@ export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
             fw.interface.writeAll(" title=\"") catch {};
             var i: usize = 0;
             while (f.comment[i] != null) : (i += 1) {
-                html_encode(&fw.interface, f.comment[i]);
+                encode(&fw.interface, f.comment[i]);
                 if (f.comment[i + 1] != null) fw.interface.writeByte('\n') catch {};
             }
             fw.interface.writeByte('"') catch {};
@@ -222,16 +222,16 @@ export fn html_printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, 
     fw.interface.writeByte('>') catch {};
 
     if (dirname != null) {
-        html_encode(&fw.interface, filename);
+        encode(&fw.interface, filename);
     } else {
-        html_encode(&fw.interface, host);
+        encode(&fw.interface, host);
     }
 
     fw.interface.writeAll("</a>") catch {};
     return 0;
 }
 
-export fn html_error(err: [*c]u8) c_int {
+pub fn printerror(err: [*c]u8) c_int {
     var buf: [512]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -239,7 +239,7 @@ export fn html_error(err: [*c]u8) c_int {
     return 0;
 }
 
-export fn html_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
+pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_int) void {
     _ = file;
     _ = level;
     _ = postdir;
@@ -250,7 +250,7 @@ export fn html_newline(file: ?*types.Info, level: c_int, postdir: c_int, needcom
     fw.interface.writeAll("<br>\n") catch {};
 }
 
-export fn html_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
+pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = level;
     _ = needcomma;
     if (file) |f| {
@@ -261,7 +261,7 @@ export fn html_close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     }
 }
 
-export fn html_report(tot: types.Totals) void {
+pub fn report(tot: types.Totals) void {
     var buf: [512]u8 = undefined;
     var fw = outfile.writer(&buf);
     defer fw.interface.flush() catch {};
@@ -285,4 +285,17 @@ export fn html_report(tot: types.Totals) void {
     }
 
     fw.interface.writeAll("\n</p>\n") catch {};
+}
+
+pub fn ListingCalls() types.ListingCalls {
+    return .{
+        .intro = &intro,
+        .outtro = &outtro,
+        .printinfo = &printinfo,
+        .printfile = &printfile,
+        .@"error" = &printerror,
+        .newline = &newline,
+        .close = &close,
+        .report = &report,
+    };
 }

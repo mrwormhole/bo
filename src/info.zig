@@ -16,22 +16,19 @@ const c = @cImport({
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
+const util = @import("util.zig");
+const filter = @import("filter.zig");
 
 extern var linedraw: [*c]const types.LineDraw;
 extern var xpattern: [c.PATH_MAX]u8;
 
-extern fn xmalloc(size: usize) *anyopaque;
-extern fn scopy(s: [*c]const u8) [*c]u8;
-extern fn gittrim(s: [*c]u8) void;
-extern fn new_pattern(pattern: [*c]u8) *types.Pattern;
-
 var infostack: ?*types.InfoFile = null;
 
 fn new_comment(phead: ?*types.Pattern, line: [*c][*c]u8, lines: c_int) *types.Comment {
-    const com: *types.Comment = @ptrCast(@alignCast(xmalloc(@sizeOf(types.Comment))));
+    const com: *types.Comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Comment))));
     com.pattern = phead;
     const lines_u: usize = @intCast(lines);
-    com.desc = @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * (lines_u + 1))));
+    com.desc = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (lines_u + 1))));
     var i: usize = 0;
     while (i < lines_u) : (i += 1) com.desc[i] = line[i];
     com.desc[i] = null;
@@ -39,7 +36,7 @@ fn new_comment(phead: ?*types.Pattern, line: [*c][*c]u8, lines: c_int) *types.Co
     return com;
 }
 
-export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
+pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     var buf: [c.PATH_MAX]u8 = undefined;
     var rpath: [c.PATH_MAX]u8 = undefined;
     var line: [c.PATH_MAX][*c]u8 = undefined;
@@ -73,11 +70,11 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile 
 
     while (c.fgets(&buf, c.PATH_MAX, fp) != null) {
         if (buf[0] == '#') continue;
-        gittrim(&buf);
+        filter.gittrim(&buf);
         if (c.strlen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
-            line[@intCast(lines)] = scopy(&buf[1]);
+            line[@intCast(lines)] = util.scopy(&buf[1]);
             lines += 1;
         } else {
             if (lines != 0) {
@@ -101,7 +98,7 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile 
                 pend = null;
                 lines = 0;
             }
-            const p = new_pattern(&buf);
+            const p = filter.new_pattern(&buf);
             if (phead == null) {
                 phead = p;
                 pend = p;
@@ -125,21 +122,21 @@ export fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile 
 
     _ = c.fclose(fp);
 
-    const inf: *types.InfoFile = @ptrCast(@alignCast(xmalloc(@sizeOf(types.InfoFile))));
+    const inf: *types.InfoFile = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.InfoFile))));
     inf.comments = chead;
-    inf.path = scopy(path);
+    inf.path = util.scopy(path);
     inf.next = null;
 
     return inf;
 }
 
-export fn push_infostack(inf: ?*types.InfoFile) void {
+pub fn push_infostack(inf: ?*types.InfoFile) void {
     if (inf == null) return;
     inf.?.next = infostack;
     infostack = inf;
 }
 
-export fn pop_infostack() ?*types.InfoFile {
+pub fn pop_infostack() ?*types.InfoFile {
     const inf = infostack orelse return null;
 
     infostack = inf.next;
@@ -170,7 +167,7 @@ export fn pop_infostack() ?*types.InfoFile {
 
 /// Returns an info pointer if a path matches a pattern.
 /// top == 1 if called in a directory with a .info file.
-export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool, ignore_case: bool) ?*types.Comment {
+pub fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir: bool, ignore_case: bool) ?*types.Comment {
     if (infostack == null) return null;
 
     var top = top_in;
@@ -196,7 +193,7 @@ export fn infocheck(path: [*c]const u8, name: [*c]const u8, top_in: c_int, isdir
     return null;
 }
 
-export fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) void {
+pub fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) void {
     const drw: [*c]const u8 = if (lines == 1)
         linedraw.*.csingle
     else if (line == 0)

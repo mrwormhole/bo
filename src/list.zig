@@ -9,6 +9,12 @@ const c = @cImport({
 
 const types = @import("types.zig");
 const stat = @import("stat.zig");
+const hash = @import("hash.zig");
+const html = @import("html.zig");
+const util = @import("util.zig");
+const filter = @import("filter.zig");
+const info_mod = @import("info.zig");
+const linux = @import("linux.zig");
 
 var lstat_info: types.Info = std.mem.zeroes(types.Info);
 
@@ -16,8 +22,8 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
     lstat_info = std.mem.zeroes(types.Info);
     if (builtin.os.tag == .linux) {
         var st: std.os.linux.Stat = undefined;
-        if (!stat.linuxStat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
-        saveino(@intCast(st.ino), @intCast(st.dev));
+        if (!linux.stat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
+        hash.saveino(@intCast(st.ino), @intCast(st.dev));
         dev_out.* = @intCast(st.dev);
         lstat_info.linode = @intCast(st.ino);
         lstat_info.ldev = @intCast(st.dev);
@@ -31,7 +37,7 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
     } else {
         var st: c.struct_stat = undefined;
         if (c.lstat(path, &st) < 0) return null;
-        saveino(st.st_ino, st.st_dev);
+        hash.saveino(st.st_ino, st.st_dev);
         dev_out.* = st.st_dev;
         lstat_info.linode = st.st_ino;
         lstat_info.ldev = st.st_dev;
@@ -71,17 +77,9 @@ extern var errors: c_int;
 extern var Level: isize;
 extern var htmldirlen: usize;
 
-extern fn saveino(ino: c.ino_t, dev: c.dev_t) void;
-extern fn findino(ino: c.ino_t, dev: c.dev_t) bool;
-extern fn url_encode(w: *std.Io.Writer, s: [*c]u8) bool;
 extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
 extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info;
 extern fn free_dir(d: [*c][*c]types.Info) void;
-extern fn flush_filterstack() ?*types.IgnoreFile;
-extern fn pop_filterstack() ?*types.IgnoreFile;
-extern fn pop_infostack() ?*types.InfoFile;
-extern fn xmalloc(size: usize) *anyopaque;
-extern fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque;
 
 var errbuf: [256]u8 = undefined;
 var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
@@ -89,11 +87,11 @@ var dirpathoffset: usize = 0;
 
 export fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void {
     // (optional) Hanging slashes are a real pain to deal with
-    var slash = url_encode(w, &realbasepath);
+    var slash = html.url_encode(w, &realbasepath);
     if (dirname[dirpathoffset] != 0) {
         slash = slash or (dirname[dirpathoffset] == '/');
         if (!slash) w.writeByte('/') catch {};
-        if (!url_encode(w, dirname + dirpathoffset)) w.writeByte('/') catch {};
+        if (!html.url_encode(w, dirname + dirpathoffset)) w.writeByte('/') catch {};
     } else if (!slash) {
         w.writeByte('/') catch {};
     }
@@ -169,7 +167,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
         } else {
             lc.newline.?(info, 0, 0, 0);
             if (dir != null) {
-                subtotal = listdir(dirname[i], dir, 1, st_dev, needfulltree);
+                subtotal = listdir(lc, dirname[i], dir, 1, st_dev, needfulltree);
                 subtotal.dirs += 1;
             }
         }
@@ -185,8 +183,8 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
         // This is already done in getfulltree()
         if (flag.du) tot.size += if (info != null) info.*.size else 0;
 
-        if (ig != null) ig = flush_filterstack();
-        if (inf != null) inf = pop_infostack();
+        if (ig != null) ig = filter.flush_filterstack();
+        if (inf != null) inf = info_mod.pop_infostack();
     }
 
     if (!flag.noreport) lc.report.?(tot);
@@ -230,7 +228,7 @@ pub fn listdir(
     var cursor = dir_in;
     dirs[@intCast(lev)] = if (cursor[1] != null) 1 else 2;
 
-    var path: [*c]u8 = @ptrCast(xmalloc(@sizeOf(u8) * pathlen));
+    var path: [*c]u8 = @ptrCast(util.xmalloc(@sizeOf(u8) * pathlen));
 
     while (cursor[0] != null) : (cursor += 1) {
         const entry = cursor[0];
@@ -240,7 +238,7 @@ pub fn listdir(
         if (namemax < namelen) {
             namemax = namelen;
             pathlen = dirlen + namemax;
-            path = @ptrCast(xrealloc(path, pathlen));
+            path = @ptrCast(util.xrealloc(path, pathlen));
         }
         if (es) {
             _ = c.sprintf(path, "%s%s", dirname, entry.*.name);
@@ -259,8 +257,8 @@ pub fn listdir(
 
             var found: bool = false;
             if (!hasfulltree) {
-                found = findino(entry.*.inode, entry.*.dev);
-                if (!found) saveino(entry.*.inode, entry.*.dev);
+                found = hash.findino(entry.*.inode, entry.*.dev);
+                if (!found) hash.saveino(entry.*.inode, entry.*.dev);
             }
 
             const xdev_block = flag.xdev and dev != entry.*.dev;
@@ -279,8 +277,8 @@ pub fn listdir(
                     if (flag.R) {
                         const outsave = outfile.*;
                         var paths = [_][*c]u8{ newpath, null };
-                        const output: [*c]u8 = @ptrCast(xmalloc(c.strlen(newpath) + 13));
-                        const dirsave: [*c]c_int = @ptrCast(@alignCast(xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
+                        const output: [*c]u8 = @ptrCast(util.xmalloc(c.strlen(newpath) + 13));
+                        const dirsave: [*c]c_int = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
 
                         const copy_bytes: usize = @sizeOf(c_int) * @as(usize, @intCast(lev + 1));
                         _ = c.memcpy(dirsave, dirs, copy_bytes);
@@ -357,8 +355,8 @@ pub fn listdir(
 
         if (cursor[1] != null and cursor[2] == null) dirs[@intCast(lev)] = 2;
 
-        if (ig != null) ig = pop_filterstack();
-        if (inf != null) inf = pop_infostack();
+        if (ig != null) ig = filter.pop_filterstack();
+        if (inf != null) inf = info_mod.pop_infostack();
     }
 
     dirs[@intCast(lev)] = 0;

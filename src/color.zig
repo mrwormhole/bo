@@ -8,13 +8,10 @@ const c = @cImport({
 });
 
 const types = @import("types.zig");
+const util = @import("util.zig");
 
 extern var flag: types.Flags;
 extern var charset: [*c]const u8;
-
-extern fn xmalloc(size: usize) *anyopaque;
-extern fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque;
-extern fn scopy(s: [*c]const u8) [*c]u8;
 
 // Enum values from the original color.c
 const ERROR = -1;
@@ -275,7 +272,7 @@ inline fn cStderr() ?*c.FILE {
 
 fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     var n: usize = 128;
-    var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(xmalloc(@sizeOf([*c]u8) * n))));
+    var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * n))));
 
     nwrds.* = 0;
     w[0] = c.strtok(str, delim);
@@ -283,7 +280,7 @@ fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     while (w[nwrds.*] != null) {
         if (nwrds.* == (n - 2)) {
             n += 256;
-            w = @as([*c][*c]u8, @ptrCast(@alignCast(xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
+            w = @as([*c][*c]u8, @ptrCast(@alignCast(util.xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
         }
         nwrds.* += 1;
         w[nwrds.*] = c.strtok(null, delim);
@@ -368,7 +365,7 @@ pub fn parse_dir_colors() void {
         color_code[@as(usize, @intCast(i))] = null;
     }
 
-    colors = scopy(s);
+    colors = util.scopy(s);
 
     arg = split(colors, ":", &n);
 
@@ -381,10 +378,10 @@ pub fn parse_dir_colors() void {
             ERROR => {},
             DOT_EXTENSION => {
                 if (c_ptr[1] != null) {
-                    e = @as(?*types.Extensions, @ptrCast(@alignCast(xmalloc(@sizeOf(types.Extensions)))));
+                    e = @as(?*types.Extensions, @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Extensions)))));
                     if (e) |e_val| {
-                        e_val.ext = scopy(c_ptr[0] + 1);
-                        e_val.term_flg = scopy(c_ptr[1]);
+                        e_val.ext = util.scopy(c_ptr[0] + 1);
+                        e_val.term_flg = util.scopy(c_ptr[1]);
                         e_val.nxt = ext;
                         ext = e_val;
                     }
@@ -396,11 +393,11 @@ pub fn parse_dir_colors() void {
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
                     // Falls through (matches C default case below)
-                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = scopy(c_ptr[1]);
+                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
                 }
             },
             else => {
-                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = scopy(c_ptr[1]);
+                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
             },
         }
 
@@ -410,31 +407,31 @@ pub fn parse_dir_colors() void {
 
     // Make sure at least reset (not normal) is defined. We're going to assume ANSI/vt100 support:
     if (color_code[@as(usize, @intCast(COL_LEFTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_LEFTCODE))] = scopy("\x1B[");
+        color_code[@as(usize, @intCast(COL_LEFTCODE))] = util.scopy("\x1B[");
     }
     if (color_code[@as(usize, @intCast(COL_RIGHTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = scopy("m");
+        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = util.scopy("m");
     }
     if (color_code[@as(usize, @intCast(COL_RESET))] == null) {
-        color_code[@as(usize, @intCast(COL_RESET))] = scopy("0");
+        color_code[@as(usize, @intCast(COL_RESET))] = util.scopy("0");
     }
     if (color_code[@as(usize, @intCast(COL_BOLD))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + rcode_len + 2))));
+        color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_BOLD))], "%s1%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ITALIC))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + rcode_len + 2))));
+        color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ITALIC))], "%s3%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ENDCODE))] == null) {
         const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
         const reset_len = c.strlen(color_code[@as(usize, @intCast(COL_RESET))]);
         const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
-        color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(xmalloc(lcode_len + reset_len + rcode_len + 1))));
+        color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + reset_len + rcode_len + 1))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ENDCODE))], "%s%s%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RESET))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
 
@@ -456,7 +453,7 @@ pub fn endcolor(w: *std.Io.Writer) void {
     }
 }
 
-pub export fn fancy(w: *std.Io.Writer, s_in: [*c]u8) void {
+pub fn fancy(w: *std.Io.Writer, s_in: [*c]u8) void {
     var s = s_in;
     while (s[0] != 0) : (s += 1) {
         switch (s[0]) {
