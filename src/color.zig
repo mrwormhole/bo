@@ -383,7 +383,7 @@ pub fn parse_dir_colors() void {
         color_code[@as(usize, @intCast(i))] = null;
     }
 
-    colors = util.copy(s);
+    colors = util.scopy(s);
 
     arg = split(colors, ":", &n);
 
@@ -398,8 +398,8 @@ pub fn parse_dir_colors() void {
                 if (c_ptr[1] != null) {
                     e = @as(?*types.Extensions, @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Extensions)))));
                     if (e) |e_val| {
-                        e_val.ext = util.copy(c_ptr[0] + 1);
-                        e_val.term_flg = util.copy(c_ptr[1]);
+                        e_val.ext = util.scopy(c_ptr[0] + 1);
+                        e_val.term_flg = util.scopy(c_ptr[1]);
                         e_val.nxt = ext;
                         ext = e_val;
                     }
@@ -411,11 +411,11 @@ pub fn parse_dir_colors() void {
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
                     // Falls through (matches C default case below)
-                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.copy(c_ptr[1]);
+                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
                 }
             },
             else => {
-                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.copy(c_ptr[1]);
+                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
             },
         }
 
@@ -425,13 +425,13 @@ pub fn parse_dir_colors() void {
 
     // Make sure at least reset (not normal) is defined. We're going to assume ANSI/vt100 support:
     if (color_code[@as(usize, @intCast(COL_LEFTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_LEFTCODE))] = util.copy("\x1B[");
+        color_code[@as(usize, @intCast(COL_LEFTCODE))] = util.scopy("\x1B[");
     }
     if (color_code[@as(usize, @intCast(COL_RIGHTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = util.copy("m");
+        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = util.scopy("m");
     }
     if (color_code[@as(usize, @intCast(COL_RESET))] == null) {
-        color_code[@as(usize, @intCast(COL_RESET))] = util.copy("0");
+        color_code[@as(usize, @intCast(COL_RESET))] = util.scopy("0");
     }
     if (color_code[@as(usize, @intCast(COL_BOLD))] == null) {
         const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);

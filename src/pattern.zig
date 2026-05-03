@@ -14,7 +14,7 @@ fn lower(ch: u8, ignore_case: bool) u8 {
 pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
     const p: *types.Pattern = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Pattern))));
     const offset: usize = if (pattern[0] == std.fs.path.sep) 1 else 0;
-    p.pattern = util.copy(pattern + offset);
+    p.pattern = util.scopy(pattern + offset);
     const sl = std.mem.findScalar(u8, c.strSpan(pattern), std.fs.path.sep);
     p.relative = @intFromBool(sl == null or pattern[sl.? + 1] == 0);
     p.next = null;

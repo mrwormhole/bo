@@ -67,5 +67,5 @@ pub fn selinux_context(path: [*c]const u8) [*c]u8 {
 
     const len: isize = xattr.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
     buf[@intCast(if (len < 0) 0 else len)] = 0;
-    return util.copy(&buf);
+    return util.scopy(&buf);
 }

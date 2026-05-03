@@ -74,7 +74,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
         if (c.strLen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
-            line[@intCast(lines)] = util.copy(&buf[1]);
+            line[@intCast(lines)] = util.scopy(&buf[1]);
             lines += 1;
         } else {
             if (lines != 0) {
@@ -124,7 +124,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
 
     const inf: *types.InfoFile = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.InfoFile))));
     inf.comments = chead;
-    inf.path = util.copy(path);
+    inf.path = util.scopy(path);
     inf.next = null;
 
     return inf;

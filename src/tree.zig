@@ -517,7 +517,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
 
-    ent.name = util.copy(name);
+    ent.name = util.scopy(name);
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
@@ -555,12 +555,12 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
         }
         const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
         if (len < 0) {
-            ent.lnk = util.copy("[Error reading symbolic link information]");
+            ent.lnk = util.scopy("[Error reading symbolic link information]");
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = util.copy(getinfo_lbuf);
+            ent.lnk = util.scopy(getinfo_lbuf);
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -635,7 +635,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
                 inf.comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.copy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.scopy(com.?.desc[ci]);
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
@@ -698,7 +698,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     dir_ptr = sav;
 
     if (dir_ptr == null and n != 0) {
-        err.* = util.copy("error opening dir");
+        err.* = util.scopy("error opening dir");
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
@@ -712,7 +712,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = util.copy(path);
+        err.* = util.scopy(path);
         free_dir(sav);
         c.free(path);
         if (tmp_pattern != 0) pattern = tmp_pattern;
@@ -729,7 +729,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (entry.lnk != null) {
                 if (flag.l) {
                     if (hash.findino(@intCast(entry.inode), @intCast(entry.dev))) {
-                        entry.err = util.copy("recursive, not followed");
+                        entry.err = util.scopy("recursive, not followed");
                     } else {
                         hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
                         if (entry.lnk[0] == std.fs.path.sep) {
@@ -773,7 +773,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
                         c.free(entry.name);
-                        entry.name = util.copy(new_name);
+                        entry.name = util.scopy(new_name);
                         entry.child = child[0].?.child;
                         entry.condensed = entry.condensed + 1 + child[0].?.condensed;
                         free_dir(child);
@@ -1149,7 +1149,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             }
                             arg = try longArg(argv, i, &j, &n, "--timefmt");
                             if (arg != null) {
-                                timefmt = util.copy(arg);
+                                timefmt = util.scopy(arg);
                                 flag.D = true;
                                 break;
                             }
@@ -1232,12 +1232,12 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             }
                             arg = try longArg(argv, i, &j, &n, "--hintro");
                             if (arg != null) {
-                                Hintro = util.copy(arg);
+                                Hintro = util.scopy(arg);
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--houtro");
                             if (arg != null) {
-                                Houtro = util.copy(arg);
+                                Houtro = util.scopy(arg);
                                 break;
                             }
                             if (std.mem.eql(u8, c.strSpan(argv[i]), "--fflinks")) {
@@ -1254,9 +1254,9 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             if (arg != null) {
                                 if (std.mem.findScalar(u8, c.strSpan(arg), ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
-                                    arg = util.copy(&xpattern);
+                                    arg = util.scopy(&xpattern);
                                 } else {
-                                    scheme = util.copy(arg);
+                                    scheme = util.scopy(arg);
                                 }
                                 break;
                             }
@@ -1264,7 +1264,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             if (arg != null) {
                                 // I don't believe that . by itself can be a valid hostname,
                                 // so it will do as a null authority.
-                                if (std.mem.eql(u8, c.strSpan(arg), ".")) authority = util.copy("") else authority = util.copy(arg);
+                                if (std.mem.eql(u8, c.strSpan(arg), ".")) authority = util.scopy("") else authority = util.scopy(arg);
                                 break;
                             }
                             if (std.mem.eql(u8, c.strSpan(argv[i]), "--opt-toggle")) {
@@ -1327,7 +1327,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                 dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
                 q += c.MINC;
             }
-            dirname[p] = util.copy(argv[i]);
+            dirname[p] = util.scopy(argv[i]);
             p += 1;
         }
     }
@@ -1359,7 +1359,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     if (dirname == null) {
         dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * 2)));
-        dirname[0] = util.copy(".");
+        dirname[0] = util.scopy(".");
         dirname[1] = null;
     }
     if (list.topsort == null) list.topsort = list.basesort;
@@ -1375,7 +1375,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
             _ = c.fprintf(c.Stderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
-            authority = util.copy(&xpattern);
+            authority = util.scopy(&xpattern);
         }
     }
 

@@ -147,7 +147,7 @@ pub fn new_ignorefile(io: std.Io, basepath: [*c]const u8, path: [*c]const u8, ch
     const ig: *types.IgnoreFile = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.IgnoreFile))));
     ig.remove = remove_head;
     ig.reverse = reverse_head;
-    ig.path = util.copy(basepath);
+    ig.path = util.scopy(basepath);
     ig.next = null;
 
     return ig;

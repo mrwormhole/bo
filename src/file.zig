@@ -61,7 +61,7 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
 fn newent(name: [*c]const u8) *types.Info {
     const n: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(types.Info)], 0);
-    n.name = util.copy(name);
+    n.name = util.scopy(name);
     n.child = null;
     n.tchild = null;
     n.next = null;
@@ -190,7 +190,7 @@ fn fprune(
                 while (com.?.desc[i] != null) : (i += 1) {}
                 ent[0].comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (i + 1))));
                 var j: usize = 0;
-                while (j < i) : (j += 1) ent[0].comment[j] = util.copy(com.?.desc[j]);
+                while (j < i) : (j += 1) ent[0].comment[j] = util.scopy(com.?.desc[j]);
                 ent[0].comment[i] = null;
             }
         }
@@ -209,7 +209,7 @@ fn fprune(
                 var segs = [_][*c]const u8{ ent[0].name, child[0].?.name };
                 const name = util.pathconcat(@ptrCast(&segs), 2);
                 std.c.free(ent[0].name);
-                ent[0].name = util.copy(name);
+                ent[0].name = util.scopy(name);
                 ent[0].child = child[0].?.child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0].?.condensed;
                 free_dir(child);
@@ -338,7 +338,7 @@ pub fn file_getfulltree(
         if (ent != null and link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.copy(link + 4);
+            ent[0].lnk = util.scopy(link + 4);
         }
     }
 
@@ -429,7 +429,7 @@ pub fn tabedfile_getfulltree(
         if (link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.copy(link + 4);
+            ent[0].lnk = util.scopy(link + 4);
         }
         top = tabs;
     }
