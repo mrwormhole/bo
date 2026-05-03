@@ -54,7 +54,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
             (stat_result.mode & c.S_IFMT) == c.S_IFREG;
     } else blk: {
         const path_slice = std.mem.span(path);
-        const stat_result = std.fs.cwd().statFile(path_slice) catch null;
+        const stat_result = std.Io.Dir.cwd().statFile(util.io, path_slice, .{}) catch null;
         break :blk if (stat_result) |st| st.kind == .file else false;
     };
     if (!is_regular) {
