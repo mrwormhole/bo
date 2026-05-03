@@ -15,15 +15,15 @@ const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
 const linux = @import("linux.zig");
 
-pub const GetFullTreeFn = fn ([*c]u8, c_ulong, c.dev_t, *c.off_t, [*c][*c]u8) [*c][*c]types.Info;
-pub const SortFn = fn ([*c]types.Info, [*c]types.Info) c_int;
+pub const GetFullTreeFn = fn ([*c]u8, c_ulong, c.dev_t, *c.off_t, [*c][*c]u8) [*c]?*types.Info;
+pub const SortFn = fn (*types.Info, *types.Info) c_int;
 
 pub var getfulltree: *const GetFullTreeFn = undefined;
 pub var basesort: ?*const SortFn = null;
 pub var topsort: ?*const SortFn = null;
 
-pub fn infoLessThan(cmp: *const SortFn, a: [*c]types.Info, b: [*c]types.Info) bool {
-    return cmp(a, b) < 0;
+pub fn infoLessThan(cmp: *const SortFn, a: ?*types.Info, b: ?*types.Info) bool {
+    return cmp(a.?, b.?) < 0;
 }
 
 var lstat_info: types.Info = std.mem.zeroes(types.Info);
@@ -85,8 +85,8 @@ extern var errors: c_int;
 extern var Level: isize;
 extern var htmldirlen: usize;
 
-extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info;
-extern fn free_dir(d: [*c][*c]types.Info) void;
+extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info;
+extern fn free_dir(d: [*c]?*types.Info) void;
 
 var errbuf: [256]u8 = undefined;
 var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
@@ -118,7 +118,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
 
     var i: usize = 0;
     while (dirname[i] != null) : (i += 1) {
-        var dir: [*c][*c]types.Info = null;
+        var dir: [*c]?*types.Info = null;
         var info: [*c]types.Info = null;
 
         if (flag.hyper) {
@@ -202,7 +202,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
 pub fn listdir(
     lc: types.ListingCalls,
     dirname: [*c]u8,
-    dir_in: [*c][*c]types.Info,
+    dir_in: [*c]?*types.Info,
     lev: c_int,
     dev: c.dev_t,
     hasfulltree: bool,
@@ -211,7 +211,7 @@ pub fn listdir(
     var subtotal: types.Totals = undefined;
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
-    var subdir: [*c][*c]types.Info = null;
+    var subdir: [*c]?*types.Info = null;
     var namemax: usize = 257;
     var htmldescend: c_int = 0;
     var n: isize = undefined;
@@ -228,7 +228,7 @@ pub fn listdir(
     n = 0;
     while (dir_in[@as(usize, @intCast(n))] != null) : (n += 1) {}
     if (topsort != null) {
-        std.mem.sort([*c]types.Info, dir_in[0..@intCast(n)], topsort.?, infoLessThan);
+        std.mem.sort(?*types.Info, dir_in[0..@intCast(n)], topsort.?, infoLessThan);
     }
 
     var cursor = dir_in;
@@ -236,39 +236,38 @@ pub fn listdir(
 
     var path: [*c]u8 = @ptrCast(util.xmalloc(@sizeOf(u8) * pathlen));
 
-    while (cursor[0] != null) : (cursor += 1) {
-        const entry = cursor[0];
+    while (cursor[0]) |entry| : (cursor += 1) {
         _ = lc.printinfo.?(dirname, entry, lev);
 
-        const namelen: usize = c.strlen(entry.*.name) + 1;
+        const namelen: usize = c.strlen(entry.name) + 1;
         if (namemax < namelen) {
             namemax = namelen;
             pathlen = dirlen + namemax;
             path = @ptrCast(util.xrealloc(path, pathlen));
         }
         if (es) {
-            _ = c.sprintf(path, "%s%s", dirname, entry.*.name);
+            _ = c.sprintf(path, "%s%s", dirname, entry.name);
         } else {
-            _ = c.sprintf(path, "%s/%s", dirname, entry.*.name);
+            _ = c.sprintf(path, "%s/%s", dirname, entry.name);
         }
-        const filename: [*c]u8 = if (flag.f) path else entry.*.name;
+        const filename: [*c]u8 = if (flag.f) path else entry.name;
 
         var descend: c_int = 0;
         err = null;
         const newpath: [*c]u8 = path;
 
-        if (entry.*.isdir) {
+        if (entry.isdir) {
             tot.dirs += 1;
-            if (flag.condense_singletons) tot.dirs += entry.*.condensed;
+            if (flag.condense_singletons) tot.dirs += entry.condensed;
 
             var found: bool = false;
             if (!hasfulltree) {
-                found = hash.findino(entry.*.inode, entry.*.dev);
-                if (!found) hash.saveino(entry.*.inode, entry.*.dev);
+                found = hash.findino(entry.inode, entry.dev);
+                if (!found) hash.saveino(entry.inode, entry.dev);
             }
 
-            const xdev_block = flag.xdev and dev != entry.*.dev;
-            const link_block = entry.*.lnk != null and !flag.l;
+            const xdev_block = flag.xdev and dev != entry.dev;
+            const link_block = entry.lnk != null and !flag.l;
             if (!xdev_block and !link_block) {
                 descend = 1;
 
@@ -286,7 +285,7 @@ pub fn listdir(
                 //   }
                 // }
 
-                if (entry.*.lnk != null and found) {
+                if (entry.lnk != null and found) {
                     err = @constCast("recursive, not followed");
                     // Not actually a problem if we weren't going to descend anyway:
                     if (Level >= 0 and lev > Level) err = null;
@@ -326,8 +325,8 @@ pub fn listdir(
 
                 if (descend > 0) {
                     if (hasfulltree) {
-                        subdir = entry.*.child;
-                        err = entry.*.err;
+                        subdir = entry.child;
+                        err = entry.err;
                     } else {
                         filter.pushFiles(newpath, &ig, &inf, false);
                         subdir = read_dir(newpath, &n, @intFromBool(inf != null));

@@ -83,7 +83,7 @@ pub fn is_singleton(dir: *types.Info) bool {
     if (child == null) return false;
     if (child[0] == null) return false;
     if (child[1] != null) return false;
-    return child[0][0].isdir;
+    return child[0].?.isdir;
 }
 
 pub fn xmalloc(size: usize) *anyopaque {
