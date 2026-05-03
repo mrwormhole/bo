@@ -23,9 +23,7 @@ const std = @import("std");
 //   </report>
 // </tree>
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const hash = @import("hash.zig");
@@ -64,7 +62,7 @@ fn fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
     if (flag.inode) w.print(" inode=\"{d}\"", .{ent.inode}) catch {};
     if (flag.dev) w.print(" dev=\"{d}\"", .{ent.dev}) catch {};
     if (flag.p) {
-        const mask: c.mode_t = c.S_IRWXU | c.S_IRWXG | c.S_IRWXO | c.S_ISUID | c.S_ISGID | c.S_ISVTX;
+        const mask: c.mode_t = std.posix.S.IRWXU | std.posix.S.IRWXG | std.posix.S.IRWXO | std.posix.S.ISUID | std.posix.S.ISGID | std.posix.S.ISVTX;
         w.print(" mode=\"{o:0>4}\" prot=\"{s}\"", .{
             ent.mode & @as(@TypeOf(ent.mode), @intCast(mask)),
             std.mem.span(prot(@intCast(ent.mode))),
@@ -101,7 +99,7 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
 
     if (!flag.noindent) indent(&fw.interface, level);
 
-    const mt: c.mode_t = if (file) |f| @intCast(f.mode & @as(@TypeOf(f.mode), @intCast(c.S_IFMT))) else 0;
+    const mt: c.mode_t = if (file) |f| @intCast(f.mode & @as(@TypeOf(f.mode), @intCast(std.posix.S.IFMT))) else 0;
 
     var t: usize = 0;
     while (ifmt[t] != 0) : (t += 1) {

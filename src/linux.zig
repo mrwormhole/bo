@@ -1,9 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const util = @import("util.zig");
 
@@ -40,8 +38,8 @@ pub fn devId(st: *const std.os.linux.Statx) u64 {
 
 pub fn has_acl(path: [*c]const u8) bool {
     if (comptime builtin.os.tag != .linux) return false;
-    var buf: [c.PATH_MAX]u8 = undefined;
-    const n: isize = c.listxattr(path, &buf, c.PATH_MAX);
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    const n: isize = c.listxattr(path, &buf, std.fs.max_path_bytes);
     if (n <= 0) return false;
 
     var key: [*c]u8 = &buf;
@@ -57,9 +55,9 @@ pub fn has_acl(path: [*c]const u8) bool {
 
 pub fn selinux_context(path: [*c]const u8) [*c]u8 {
     if (comptime builtin.os.tag != .linux) return null;
-    var buf: [c.PATH_MAX]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
 
-    const len: isize = c.getxattr(path, "security.selinux", &buf, c.PATH_MAX - 1);
+    const len: isize = c.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
     buf[@intCast(if (len < 0) 0 else len)] = 0;
     return util.scopy(&buf);
 }

@@ -3,9 +3,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const pat = @import("pattern.zig");
 const types = @import("types.zig");
@@ -23,6 +21,7 @@ const hash = @import("hash.zig");
 const help = @import("help.zig");
 const linux = @import("linux.zig");
 const list = @import("list.zig");
+const constants = @import("constants.zig");
 
 // ---------------------------------------------------------------------------
 // Extern from color.zig
@@ -68,21 +67,21 @@ export var Level: isize = 0;
 export var maxdirs: usize = 0;
 export var errors: c_int = 0;
 
-export var xpattern: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
+export var xpattern: [std.fs.max_path_bytes]u8 = std.mem.zeroes([std.fs.max_path_bytes]u8);
 
 export var mb_cur_max: c_int = 0;
 
 // ---------------------------------------------------------------------------
 // Platform-conditional ifmt / ftype
 // ---------------------------------------------------------------------------
-export var ifmt: [if (@hasDecl(c, "S_IFPORT")) 10 else 8]c.mode_t =
-    if (@hasDecl(c, "S_IFPORT"))
-        .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, c.S_IFDOOR, c.S_IFPORT, 0 }
+export var ifmt: [if (@hasDecl(std.posix.S, "IFPORT")) 10 else 8]c.mode_t =
+    if (@hasDecl(std.posix.S, "IFPORT"))
+        .{ std.posix.S.IFREG, std.posix.S.IFDIR, std.posix.S.IFLNK, std.posix.S.IFCHR, std.posix.S.IFBLK, std.posix.S.IFSOCK, std.posix.S.IFIFO, std.posix.S.IFDOOR, std.posix.S.IFPORT, 0 }
     else
-        .{ c.S_IFREG, c.S_IFDIR, c.S_IFLNK, c.S_IFCHR, c.S_IFBLK, c.S_IFSOCK, c.S_IFIFO, 0 };
+        .{ std.posix.S.IFREG, std.posix.S.IFDIR, std.posix.S.IFLNK, std.posix.S.IFCHR, std.posix.S.IFBLK, std.posix.S.IFSOCK, std.posix.S.IFIFO, 0 };
 
-export var ftype: [if (@hasDecl(c, "S_IFPORT")) 11 else 9][*c]const u8 =
-    if (@hasDecl(c, "S_IFPORT"))
+export var ftype: [if (@hasDecl(std.posix.S, "IFPORT")) 11 else 9][*c]const u8 =
+    if (@hasDecl(std.posix.S, "IFPORT"))
         .{ "file", "directory", "link", "char", "block", "socket", "fifo", "door", "port", "unknown", null }
     else
         .{ "file", "directory", "link", "char", "block", "socket", "fifo", "unknown", null };
@@ -110,17 +109,11 @@ const sorts = [_]SortEntry{
 // ---------------------------------------------------------------------------
 
 inline fn cStderr() ?*c.FILE {
-    return switch (builtin.os.tag) {
-        .linux => c.stderr,
-        else => c.stderr(),
-    };
+    return c.cStderr();
 }
 
 inline fn cStdout() ?*c.FILE {
-    return switch (builtin.os.tag) {
-        .linux => c.stdout,
-        else => c.stdout(),
-    };
+    return c.cStdout();
 }
 
 fn getMbCurMax() c_int {
@@ -159,16 +152,16 @@ var read_dir_pathsize: usize = 0;
 // ---------------------------------------------------------------------------
 
 export fn prot(m: c.mode_t) [*c]u8 {
-    const fmt_str: [*:0]const u8 = if (@hasDecl(c, "S_IFPORT")) "-dlcbspDP?" else "-dlcbsp?";
+    const fmt_str: [*:0]const u8 = if (@hasDecl(std.posix.S, "IFPORT")) "-dlcbspDP?" else "-dlcbsp?";
 
     var i: c_int = 0;
-    while (ifmt[@intCast(i)] != 0 and (m & c.S_IFMT) != ifmt[@intCast(i)]) : (i += 1) {}
+    while (ifmt[@intCast(i)] != 0 and (m & std.posix.S.IFMT) != ifmt[@intCast(i)]) : (i += 1) {}
     prot_buf[0] = fmt_str[@intCast(i)];
 
     // Nice, but maybe not so portable, it is should be no less portable than the
     // old code.
     const perms = "rwxrwxrwx";
-    var b: c.mode_t = c.S_IRUSR;
+    var b: c.mode_t = std.posix.S.IRUSR;
     var j: usize = 0;
     while (j < 9) : ({
         b >>= 1;
@@ -176,9 +169,9 @@ export fn prot(m: c.mode_t) [*c]u8 {
     }) {
         prot_buf[j + 1] = if ((m & b) != 0) perms[j] else '-';
     }
-    if ((m & c.S_ISUID) != 0) prot_buf[3] = if (prot_buf[3] == '-') 'S' else 's';
-    if ((m & c.S_ISGID) != 0) prot_buf[6] = if (prot_buf[6] == '-') 'S' else 's';
-    if ((m & c.S_ISVTX) != 0) prot_buf[9] = if (prot_buf[9] == '-') 'T' else 't';
+    if ((m & std.posix.S.ISUID) != 0) prot_buf[3] = if (prot_buf[3] == '-') 'S' else 's';
+    if ((m & std.posix.S.ISGID) != 0) prot_buf[6] = if (prot_buf[6] == '-') 'S' else 's';
+    if ((m & std.posix.S.ISVTX) != 0) prot_buf[9] = if (prot_buf[9] == '-') 'T' else 't';
 
     prot_buf[10] = 0;
     return &prot_buf;
@@ -289,15 +282,15 @@ export fn psize(buf: [*c]u8, size: c.off_t) c_int {
 }
 
 export fn Ftype(mode: c.mode_t) u8 {
-    const m: c_int = @intCast(mode & c.S_IFMT);
-    if (!flag.d and m == c.S_IFDIR) return '/';
-    if (m == c.S_IFSOCK) return '=';
-    if (m == c.S_IFIFO) return '|';
-    if (m == c.S_IFLNK) return '@'; // Here, but never actually used though.
-    if (@hasDecl(c, "S_IFDOOR")) {
-        if (m == c.S_IFDOOR) return '>';
+    const m: c_int = @intCast(mode & std.posix.S.IFMT);
+    if (!flag.d and m == std.posix.S.IFDIR) return '/';
+    if (m == std.posix.S.IFSOCK) return '=';
+    if (m == std.posix.S.IFIFO) return '|';
+    if (m == std.posix.S.IFLNK) return '@'; // Here, but never actually used though.
+    if (@hasDecl(std.posix.S, "IFDOOR")) {
+        if (m == std.posix.S.IFDOOR) return '>';
     }
-    if (m == c.S_IFREG and (mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0) return '*';
+    if (m == std.posix.S.IFREG and (mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH)) != 0) return '*';
     return 0;
 }
 
@@ -461,23 +454,15 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
     } else {
         var lst: c.struct_stat = undefined;
         if (c.lstat(path, &lst) < 0) return false;
-        ent.mode = @intCast(lst.st_mode);
-        ent.uid = @intCast(lst.st_uid);
-        ent.gid = @intCast(lst.st_gid);
-        ent.size = @intCast(lst.st_size);
-        ent.ldev = @intCast(lst.st_dev);
-        ent.linode = @intCast(lst.st_ino);
-        // st_atime/ctime/mtime are C macros not real fields; access via timespec members.
-        // macOS uses st_atimespec; POSIX (FreeBSD etc.) uses st_atim.
-        if (comptime @hasField(c.struct_stat, "st_atimespec")) {
-            ent.atime = @intCast(lst.st_atimespec.tv_sec);
-            ent.ctime = @intCast(lst.st_ctimespec.tv_sec);
-            ent.mtime = @intCast(lst.st_mtimespec.tv_sec);
-        } else {
-            ent.atime = @intCast(lst.st_atim.tv_sec);
-            ent.ctime = @intCast(lst.st_ctim.tv_sec);
-            ent.mtime = @intCast(lst.st_mtim.tv_sec);
-        }
+        ent.mode = @intCast(lst.mode);
+        ent.uid = @intCast(lst.uid);
+        ent.gid = @intCast(lst.gid);
+        ent.size = @intCast(lst.size);
+        ent.ldev = @intCast(lst.dev);
+        ent.linode = @intCast(lst.ino);
+        ent.atime = @intCast(lst.atime().sec);
+        ent.ctime = @intCast(lst.ctime().sec);
+        ent.mtime = @intCast(lst.mtime().sec);
         return true;
     }
 }
@@ -485,7 +470,7 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
 // Split out stat portion from read_dir as prelude to just using stat structure directly.
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (getinfo_lbuf == null) {
-        getinfo_lbufsize = c.PATH_MAX;
+        getinfo_lbufsize = std.fs.max_path_bytes;
         getinfo_lbuf = @ptrCast(util.xmalloc(getinfo_lbufsize));
     }
 
@@ -500,7 +485,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     var st_ino: c.ino_t = @intCast(ent_storage.linode);
     var rs: c_int = 0;
 
-    if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
+    if ((lst_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFLNK)) {
         if (comptime builtin.os.tag == .linux) {
             var lxst: std.os.linux.Statx = undefined;
             if (linux.stat(@ptrCast(path), 0, &lxst)) {
@@ -514,9 +499,9 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
             var st: c.struct_stat = std.mem.zeroes(c.struct_stat);
             rs = c.stat(path, &st);
             if (rs >= 0) {
-                st_mode = st.st_mode;
-                st_dev = st.st_dev;
-                st_ino = st.st_ino;
+                st_mode = st.mode;
+                st_dev = st.dev;
+                st_ino = st.ino;
             }
         }
         // Orphan symlink: the target doesn't exist, so "target mode/dev/inode"
@@ -532,16 +517,16 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
         }
     }
 
-    const isdir: bool = (st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR);
+    const isdir: bool = (st_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFDIR);
 
     if (flag.gitignore and filter.filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
 
-    if ((lst_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR) and !(flag.l and ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFDIR)))) {
+    if ((lst_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR) and !(flag.l and ((st_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFDIR)))) {
         if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, file_pathsep[0]) == 0) return null;
     }
     if (ipattern != 0 and (pat.ignore(name, ipatterns[0..@intCast(ipattern)], isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or pat.ignore(path, ipatterns[0..@intCast(ipattern)], isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) return null;
 
-    if (flag.d and ((st_mode & c.S_IFMT) != @as(c.mode_t, c.S_IFDIR))) return null;
+    if (flag.d and ((st_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR))) return null;
 
     // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
     const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
@@ -573,11 +558,11 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     ent.isdir = isdir;
 
     // These should perhaps be eliminated, as they're barely used:
-    ent.issok = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFSOCK));
-    ent.isfifo = ((st_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFIFO));
-    ent.isexe = (st_mode & (c.S_IXUSR | c.S_IXGRP | c.S_IXOTH)) != 0;
+    ent.issok = ((st_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFSOCK));
+    ent.isfifo = ((st_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFIFO));
+    ent.isexe = (st_mode & (std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH)) != 0;
 
-    if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
+    if ((lst_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFLNK)) {
         const lst_size: usize = @intCast(ent_storage.size);
         if (lst_size + 1 > getinfo_lbufsize) {
             getinfo_lbufsize = lst_size + 8192;
@@ -621,7 +606,7 @@ export fn free_dir(d: [*c]?*types.Info) void {
 
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path == null) {
-        read_dir_pathsize = c.strlen(dir) + c.PATH_MAX;
+        read_dir_pathsize = c.strlen(dir) + std.fs.max_path_bytes;
         read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
     }
 
@@ -630,7 +615,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
 
-    var ne: usize = c.MINIT;
+    var ne: usize = constants.MINIT;
     var dl: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * ne)));
     var p: usize = 0;
 
@@ -645,7 +630,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const dlen = c.strlen(dir);
         const elen = c.strlen(dname);
         if (dlen + elen + 2 > read_dir_pathsize) {
-            read_dir_pathsize = dlen + elen + c.PATH_MAX;
+            read_dir_pathsize = dlen + elen + std.fs.max_path_bytes;
             read_dir_path = @ptrCast(util.xrealloc(read_dir_path, read_dir_pathsize));
         }
         if (es) {
@@ -669,8 +654,8 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + c.MINC))));
-                ne += c.MINC;
+                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + constants.MINC))));
+                ne += constants.MINC;
             }
             dl[p] = inf;
             p += 1;
@@ -712,7 +697,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             }
         } else {
             var sb: c.struct_stat = undefined;
-            if (c.stat(d, &sb) == 0) dev = sb.st_dev;
+            if (c.stat(d, &sb) == 0) dev = sb.dev;
         }
     }
     // if the directory name matches, turn off pattern matching for contents
@@ -737,7 +722,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
-    pathsize = c.PATH_MAX;
+    pathsize = std.fs.max_path_bytes;
     path = @ptrCast(util.xmalloc(pathsize));
 
     if (flag.flimit > 0 and n > flag.flimit) {
@@ -931,7 +916,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(types.Flags)], 0);
 
-    maxdirs = c.PATH_MAX;
+    maxdirs = std.fs.max_path_bytes;
     dirs = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * maxdirs)));
     @memset(@as([*]u8, @ptrCast(dirs))[0 .. @sizeOf(c_int) * maxdirs], 0);
     dirs[0] = 0;
@@ -957,10 +942,10 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     if (comptime builtin.os.tag == .linux) {
         // Output JSON automatically to "stddata" if present:
-        const stddata_fd_str = c.getenv(c.ENV_STDDATA_FD);
+        const stddata_fd_str = c.getenv(constants.ENV_STDDATA_FD);
         if (stddata_fd_str != null) {
             var std_fd: c_int = c.atoi(stddata_fd_str);
-            if (std_fd <= 0) std_fd = c.STDDATA_FILENO;
+            if (std_fd <= 0) std_fd = constants.STDDATA_FILENO;
             if (c.fcntl(std_fd, c.F_GETFD) >= 0) {
                 flag.J = true;
                 flag.noindent = true;
@@ -1071,7 +1056,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     'L' => {
                         if (c.isdigit(argv[i][j + 1]) != 0) {
                             k = 0;
-                            while (argv[i][j + 1 + k] != 0 and c.isdigit(argv[i][j + 1 + k]) != 0 and k < c.PATH_MAX - 1) : (k += 1) {
+                            while (argv[i][j + 1 + k] != 0 and c.isdigit(argv[i][j + 1 + k]) != 0 and k < std.fs.max_path_bytes - 1) : (k += 1) {
                                 xpattern[k] = argv[i][j + 1 + k];
                             }
                             xpattern[k] = 0;
@@ -1347,11 +1332,11 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
-                q = c.MINIT;
+                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + constants.MINIT))));
+                q = constants.MINIT;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
-                q += c.MINC;
+                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + constants.MINC))));
+                q += constants.MINC;
             }
             dirname[p] = util.scopy(argv[i]);
             p += 1;
@@ -1397,7 +1382,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
     if (flag.hyper and authority == null) {
         // If the hostname is longer than PATH_MAX, maybe it's just as well we don't
         // try to use it.
-        if (c.gethostname(&xpattern, c.PATH_MAX) < 0) {
+        if (c.gethostname(&xpattern, std.fs.max_path_bytes) < 0) {
             _ = c.fprintf(cStderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
@@ -1406,7 +1391,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
     }
 
     if (flag.showinfo) {
-        info_mod.push_infostack(info_mod.new_infofile(c.INFO_PATH, false));
+        info_mod.push_infostack(info_mod.new_infofile(constants.INFO_PATH, false));
     }
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;

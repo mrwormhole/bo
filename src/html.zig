@@ -2,9 +2,7 @@
 
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const util = @import("util.zig");
@@ -68,7 +66,7 @@ fn fcat(w: *std.Io.Writer, filename: [*c]const u8) void {
     const fp = c.fopen(filename, "r") orelse return;
     defer _ = c.fclose(fp);
 
-    var buf: [c.PATH_MAX]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     while (true) {
         const n = c.fread(&buf, 1, buf.len, fp);
         if (n == 0) break;

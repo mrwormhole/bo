@@ -11,16 +11,14 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 const util = @import("util.zig");
 
 extern var linedraw: [*c]const types.LineDraw;
-extern var xpattern: [c.PATH_MAX]u8;
+extern var xpattern: [std.fs.max_path_bytes]u8;
 
 var infostack: ?*types.InfoFile = null;
 
@@ -37,9 +35,9 @@ fn new_comment(phead: ?*types.Pattern, line: [*c][*c]u8, lines: c_int) *types.Co
 }
 
 pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
-    var buf: [c.PATH_MAX]u8 = undefined;
-    var rpath: [c.PATH_MAX]u8 = undefined;
-    var line: [c.PATH_MAX][*c]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
+    var rpath: [std.fs.max_path_bytes]u8 = undefined;
+    var line: [std.fs.max_path_bytes][*c]u8 = undefined;
     var lines: c_int = 0;
     var fp: ?*c.FILE = null;
     var chead: ?*types.Comment = null;
@@ -51,15 +49,15 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     const stat_result = std.Io.Dir.cwd().statFile(util.io, path_slice, .{}) catch null;
     const is_regular = if (stat_result) |st| st.kind == .file else false;
     if (!is_regular) {
-        _ = c.snprintf(&buf, c.PATH_MAX, "%s/.info", path);
+        _ = c.snprintf(&buf, std.fs.max_path_bytes, "%s/.info", path);
         fp = c.fopen(&buf, "r");
 
         if (fp == null and checkparents) {
             _ = c.strcpy(&rpath, path);
             while (fp == null and c.strcmp(&rpath, "/") != 0) {
-                _ = c.snprintf(&buf, c.PATH_MAX, "%.*s/..", @as(c_int, c.PATH_MAX - 4), &rpath);
+                _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/..", @as(c_int, std.fs.max_path_bytes - 4), &rpath);
                 if (c.realpath(&buf, &rpath) == null) break;
-                _ = c.snprintf(&buf, c.PATH_MAX, "%.*s/.info", @as(c_int, c.PATH_MAX - 7), &rpath);
+                _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/.info", @as(c_int, std.fs.max_path_bytes - 7), &rpath);
                 fp = c.fopen(&buf, "r");
             }
         }
@@ -68,7 +66,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     }
     if (fp == null) return null;
 
-    while (c.fgets(&buf, c.PATH_MAX, fp) != null) {
+    while (c.fgets(&buf, std.fs.max_path_bytes, fp) != null) {
         if (buf[0] == '#') continue;
         util.gittrim(&buf);
         if (c.strlen(&buf) < 1) continue;

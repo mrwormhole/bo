@@ -1,20 +1,18 @@
 //! .gitignore-style filtering ported from filter.c.
 
 const std = @import("std");
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 const util = @import("util.zig");
 const info_mod = @import("info.zig");
 
-extern var xpattern: [c.PATH_MAX]u8;
+extern var xpattern: [std.fs.max_path_bytes]u8;
 extern var flag: types.Flags;
 
 pub fn pushFiles(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void {
-    var path_buf: [c.PATH_MAX]u8 = undefined;
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
 
     if (flag.gitignore) {
         var tig: ?*types.IgnoreFile = null;
@@ -62,16 +60,16 @@ fn is_dir(io: std.Io, path: [*c]const u8) bool {
 pub fn gitignore_search(io: std.Io, startpath: [*c]const u8, depth: c_int) ?*types.IgnoreFile {
     var pign: ?*types.IgnoreFile = null;
     var ign: ?*types.IgnoreFile = null;
-    var path: [c.PATH_MAX + 1]u8 = undefined;
+    var path: [std.fs.max_path_bytes + 1]u8 = undefined;
 
     // strcpy(rpath, startpath);
 
     // Stop when we hit a directory with a .git directory. we'll assume it's the
     // git root:
-    _ = c.snprintf(&path, c.PATH_MAX, "%.*s/.git", @as(c_int, c.PATH_MAX - 6), startpath);
+    _ = c.snprintf(&path, std.fs.max_path_bytes, "%.*s/.git", @as(c_int, std.fs.max_path_bytes - 6), startpath);
     if (is_dir(io, &path)) {
         // Add it's .git/config/exclude
-        _ = c.snprintf(&path, c.PATH_MAX, "%.*s/.git/info/exclude", @as(c_int, c.PATH_MAX - 21), startpath);
+        _ = c.snprintf(&path, std.fs.max_path_bytes, "%.*s/.git/info/exclude", @as(c_int, std.fs.max_path_bytes - 21), startpath);
         if (is_file(io, &path)) {
             pign = new_ignorefile(io, startpath, &path, false);
             push_filterstack(pign);
@@ -80,12 +78,12 @@ pub fn gitignore_search(io: std.Io, startpath: [*c]const u8, depth: c_int) ?*typ
         if (c.realpath(startpath, &path) == null) return null;
         if (c.strcmp(&path, "/") != 0 and depth < 2048) {
             // Otherwise if we haven't reached /, then keep searching upward:
-            _ = c.snprintf(&path, c.PATH_MAX, "%.*s/..", @as(c_int, c.PATH_MAX - 4), startpath);
+            _ = c.snprintf(&path, std.fs.max_path_bytes, "%.*s/..", @as(c_int, std.fs.max_path_bytes - 4), startpath);
             pign = gitignore_search(io, &path, depth + 1);
         }
     }
 
-    _ = c.snprintf(&path, c.PATH_MAX, "%.*s/.gitignore", @as(c_int, c.PATH_MAX - 12), startpath);
+    _ = c.snprintf(&path, std.fs.max_path_bytes, "%.*s/.gitignore", @as(c_int, std.fs.max_path_bytes - 12), startpath);
     if (is_file(io, &path)) {
         ign = new_ignorefile(io, startpath, &path, false);
         push_filterstack(ign);
@@ -95,7 +93,7 @@ pub fn gitignore_search(io: std.Io, startpath: [*c]const u8, depth: c_int) ?*typ
 }
 
 pub fn new_ignorefile(io: std.Io, basepath: [*c]const u8, path: [*c]const u8, checkparents: bool) ?*types.IgnoreFile {
-    var buf: [c.PATH_MAX]u8 = undefined;
+    var buf: [std.fs.max_path_bytes]u8 = undefined;
     var fp: ?*c.FILE = null;
     var remove_head: ?*types.Pattern = null;
     var remove_end: ?*types.Pattern = null;
@@ -103,7 +101,7 @@ pub fn new_ignorefile(io: std.Io, basepath: [*c]const u8, path: [*c]const u8, ch
     var reverse_end: ?*types.Pattern = null;
 
     if (!is_file(io, path)) {
-        _ = c.snprintf(&buf, c.PATH_MAX, "%s/.gitignore", path);
+        _ = c.snprintf(&buf, std.fs.max_path_bytes, "%s/.gitignore", path);
         fp = c.fopen(&buf, "r");
 
         // This probably will never actually happen anymore:
@@ -115,7 +113,7 @@ pub fn new_ignorefile(io: std.Io, basepath: [*c]const u8, path: [*c]const u8, ch
     }
     if (fp == null) return null;
 
-    while (c.fgets(&buf, c.PATH_MAX, fp) != null) {
+    while (c.fgets(&buf, std.fs.max_path_bytes, fp) != null) {
         if (buf[0] == '#') continue;
         const rev = buf[0] == '!';
         util.gittrim(&buf);
