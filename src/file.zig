@@ -1,10 +1,7 @@
 //! File-input tree building, ported from file.c.
 
 const std = @import("std");
-const builtin = @import("builtin");
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
@@ -24,17 +21,6 @@ extern var ipatterns: [*c][*c]u8;
 extern fn free_dir(d: [*c]?*types.Info) void;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
-
-// On macOS and BSD, the `stdin` C macro expands to `__stdinp`. cImport
-// translates it as a function pointer rather than a FILE*. Declare the
-// underlying global directly and use it via dead-branch elimination.
-extern var __stdinp: ?*c.FILE;
-
-fn cStdin() ?*c.FILE {
-    // builtin.os.tag is comptime-known; the dead branch is not emitted.
-    if (builtin.os.tag == .linux) return c.stdin;
-    return __stdinp;
-}
 
 const Ftok = enum(c_int) {
     T_PATHSEP = 0,
@@ -286,7 +272,7 @@ pub fn file_getfulltree(
     _ = err;
 
     const use_stdin = c.strcmp(d, ".") == 0;
-    const fp: ?*c.FILE = if (use_stdin) cStdin() else c.fopen(d, "r");
+    const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
     if (fp == null) {
@@ -368,7 +354,7 @@ pub fn tabedfile_getfulltree(
     _ = err;
 
     const use_stdin = c.strcmp(d, ".") == 0;
-    const fp: ?*c.FILE = if (use_stdin) cStdin() else c.fopen(d, "r");
+    const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
     if (fp == null) {

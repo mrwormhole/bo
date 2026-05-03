@@ -3,9 +3,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const hash = @import("hash.zig");
@@ -48,32 +46,24 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
     } else {
         var st: c.struct_stat = undefined;
         if (c.lstat(path, &st) < 0) return null;
-        hash.saveino(st.st_ino, st.st_dev);
-        dev_out.* = st.st_dev;
-        lstat_info.linode = st.st_ino;
-        lstat_info.ldev = st.st_dev;
-        lstat_info.mode = @intCast(st.st_mode);
-        lstat_info.uid = st.st_uid;
-        lstat_info.gid = st.st_gid;
-        lstat_info.size = st.st_size;
-        // st_atime/ctime/mtime are C macros, not real struct fields.
-        // macOS uses st_atimespec; FreeBSD and other POSIX systems use st_atim.
-        if (comptime @hasField(c.struct_stat, "st_atimespec")) {
-            lstat_info.atime = st.st_atimespec.tv_sec;
-            lstat_info.ctime = st.st_ctimespec.tv_sec;
-            lstat_info.mtime = st.st_mtimespec.tv_sec;
-        } else {
-            lstat_info.atime = st.st_atim.tv_sec;
-            lstat_info.ctime = st.st_ctim.tv_sec;
-            lstat_info.mtime = st.st_mtim.tv_sec;
-        }
+        hash.saveino(st.ino, st.dev);
+        dev_out.* = st.dev;
+        lstat_info.linode = st.ino;
+        lstat_info.ldev = st.dev;
+        lstat_info.mode = @intCast(st.mode);
+        lstat_info.uid = st.uid;
+        lstat_info.gid = st.gid;
+        lstat_info.size = st.size;
+        lstat_info.atime = st.atime().sec;
+        lstat_info.ctime = st.ctime().sec;
+        lstat_info.mtime = st.mtime().sec;
     }
     const mode: u32 = @intCast(lstat_info.mode);
-    const s_ifmt: u32 = @as(u32, c.S_IFMT);
-    lstat_info.isdir = (mode & s_ifmt) == @as(u32, c.S_IFDIR);
-    lstat_info.issok = (mode & s_ifmt) == @as(u32, c.S_IFSOCK);
-    lstat_info.isfifo = (mode & s_ifmt) == @as(u32, c.S_IFIFO);
-    const exec_mask: u32 = @as(u32, c.S_IXUSR | c.S_IXGRP | c.S_IXOTH);
+    const s_ifmt: u32 = @as(u32, std.posix.S.IFMT);
+    lstat_info.isdir = (mode & s_ifmt) == @as(u32, std.posix.S.IFDIR);
+    lstat_info.issok = (mode & s_ifmt) == @as(u32, std.posix.S.IFSOCK);
+    lstat_info.isfifo = (mode & s_ifmt) == @as(u32, std.posix.S.IFIFO);
+    const exec_mask: u32 = @as(u32, std.posix.S.IXUSR | std.posix.S.IXGRP | std.posix.S.IXOTH);
     lstat_info.isexe = (mode & exec_mask) != 0;
     return &lstat_info;
 }
@@ -89,7 +79,7 @@ extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info;
 extern fn free_dir(d: [*c]?*types.Info) void;
 
 var errbuf: [256]u8 = undefined;
-var realbasepath: [c.PATH_MAX]u8 = std.mem.zeroes([c.PATH_MAX]u8);
+var realbasepath: [std.fs.max_path_bytes]u8 = std.mem.zeroes([std.fs.max_path_bytes]u8);
 var dirpathoffset: usize = 0;
 
 export fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void {

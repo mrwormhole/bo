@@ -2,9 +2,7 @@
 
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const html = @import("html.zig");

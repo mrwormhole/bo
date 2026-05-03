@@ -1,11 +1,8 @@
 //! Color and charset support ported from color.c.
 
 const std = @import("std");
-const builtin = @import("builtin");
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const util = @import("util.zig");
@@ -259,14 +256,6 @@ const cstable = [_]types.LineDraw{
 
 // Exported for use by tree.c and info.zig (mutable, set by initlinedraw)
 export var linedraw: [*c]const types.LineDraw = null;
-
-// On macOS/FreeBSD stderr is an inline function; on Linux it's a plain pointer.
-inline fn cStderr() ?*c.FILE {
-    return switch (builtin.os.tag) {
-        .linux => c.stderr,
-        else => c.stderr(),
-    };
-}
 
 // Hacked in DIR_COLORS support for linux. ------------------------------
 //
@@ -536,17 +525,17 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
     }
 
     // S_IFDOOR is only defined on Solaris/illumos
-    if (@hasDecl(c, "S_IFDOOR")) {
-        if ((mode & std.posix.S.IFMT) == c.S_IFDOOR) {
+    if (@hasDecl(std.posix.S, "IFDOOR")) {
+        if ((mode & std.posix.S.IFMT) == std.posix.S.IFDOOR) {
             return print_color(w, COL_DOOR);
         }
     }
 
-    if ((mode & std.posix.S.IFMT) == c.S_IFSOCK) {
+    if ((mode & std.posix.S.IFMT) == std.posix.S.IFSOCK) {
         return print_color(w, COL_SOCK);
     }
 
-    if ((mode & std.posix.S.IFMT) == c.S_IFREG) {
+    if ((mode & std.posix.S.IFMT) == std.posix.S.IFREG) {
         if ((mode & std.posix.S.ISUID) != 0) {
             if (print_color(w, COL_SETUID)) return true;
         }
@@ -579,12 +568,12 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
 pub fn initlinedraw(help: bool) void {
     if (help) {
         var i: usize = 0;
-        _ = c.fprintf(cStderr(), "Valid charsets include:\n");
+        _ = c.fprintf(c.Stderr(), "Valid charsets include:\n");
         while (i < cstable.len) : (i += 1) {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                _ = c.fprintf(cStderr(), "  %s\n", cstable[i].name[j]);
+                _ = c.fprintf(c.Stderr(), "  %s\n", cstable[i].name[j]);
             }
         }
         return;

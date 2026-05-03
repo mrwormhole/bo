@@ -1,9 +1,7 @@
 //! Utilities ported from util.c
 
 const std = @import("std");
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 
@@ -51,13 +49,13 @@ fn pathnpcatSep(
     return d;
 }
 
-var path_buf: [c.PATH_MAX + 1]u8 = undefined;
+var path_buf: [std.fs.max_path_bytes + 1]u8 = undefined;
 
 const sep_str = std.fs.path.sep_str;
 
 /// Joins n path segments, deduplicating consecutive separators.
 pub fn pathconcat(segments: [*c][*c]const u8, n: usize) [*c]u8 {
-    const limit: [*]u8 = path_buf[c.PATH_MAX..].ptr;
+    const limit: [*]u8 = path_buf[std.fs.max_path_bytes..].ptr;
 
     if (n == 0) {
         path_buf[0] = 0;

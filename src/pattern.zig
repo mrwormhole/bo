@@ -1,8 +1,6 @@
 //! Pattern matching functions ported from tree.c.
 
-const c = @cImport({
-    @cInclude("tree.h");
-});
+const c = @import("cstd.zig");
 
 const types = @import("types.zig");
 const util = @import("util.zig");
