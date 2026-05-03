@@ -183,14 +183,14 @@ pub fn cStdin() ?*FILE {
     };
 }
 
-pub fn cStdout() ?*FILE {
+pub fn Stdout() ?*FILE {
     return switch (builtin.os.tag) {
         .linux => stdout,
         else => __stdoutp,
     };
 }
 
-pub fn cStderr() ?*FILE {
+pub fn Stderr() ?*FILE {
     return switch (builtin.os.tag) {
         .linux => stderr,
         else => __stderrp,

@@ -257,10 +257,6 @@ const cstable = [_]types.LineDraw{
 // Exported for use by tree.c and info.zig (mutable, set by initlinedraw)
 export var linedraw: [*c]const types.LineDraw = null;
 
-inline fn cStderr() ?*c.FILE {
-    return c.cStderr();
-}
-
 // Hacked in DIR_COLORS support for linux. ------------------------------
 //
 //  If someone asked me, I'd extend dircolors, to provide more generic
@@ -572,12 +568,12 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
 pub fn initlinedraw(help: bool) void {
     if (help) {
         var i: usize = 0;
-        _ = c.fprintf(cStderr(), "Valid charsets include:\n");
+        _ = c.fprintf(c.Stderr(), "Valid charsets include:\n");
         while (i < cstable.len) : (i += 1) {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                _ = c.fprintf(cStderr(), "  %s\n", cstable[i].name[j]);
+                _ = c.fprintf(c.Stderr(), "  %s\n", cstable[i].name[j]);
             }
         }
         return;

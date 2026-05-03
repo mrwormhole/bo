@@ -105,14 +105,6 @@ const sorts = [_]SortEntry{
 // Platform helpers
 // ---------------------------------------------------------------------------
 
-inline fn cStderr() ?*c.FILE {
-    return c.cStderr();
-}
-
-inline fn cStdout() ?*c.FILE {
-    return c.cStdout();
-}
-
 fn getMbCurMax() c_int {
     // MB_CUR_MAX is a runtime locale value.  On glibc-based Linux systems it is
     // exposed via __ctype_get_mb_cur_max; on macOS/__mb_cur_max; elsewhere
@@ -849,7 +841,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
                 ret = argv[i] + j.*;
                 j.* = c.strlen(argv[i]) - 1;
             } else {
-                _ = c.fprintf(cStderr(), "tree: Missing argument to %s=\n", prefix);
+                _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s=\n", prefix);
                 if (c.strcmp(prefix, "--charset=") == 0) initlinedraw(true);
                 return error.InvalidArgument;
             }
@@ -858,7 +850,7 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
             n.* += 1;
             j.* = c.strlen(argv[i]) - 1;
         } else {
-            _ = c.fprintf(cStderr(), "tree: Missing argument to %s\n", prefix);
+            _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s\n", prefix);
             if (c.strcmp(prefix, "--charset") == 0) initlinedraw(true);
             return error.InvalidArgument;
         }
@@ -986,7 +978,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     'x' => flag.xdev = if (opt_toggle) !flag.xdev else true,
                     'P' => {
                         if (argv[n] == null) {
-                            _ = c.fprintf(cStderr(), "tree: Missing argument to -P option.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Missing argument to -P option.\n");
                             return error.InvalidArgument;
                         }
                         try patterns_list.append(gpa, argv[n]);
@@ -994,7 +986,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     },
                     'I' => {
                         if (argv[n] == null) {
-                            _ = c.fprintf(cStderr(), "tree: Missing argument to -I option.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Missing argument to -I option.\n");
                             return error.InvalidArgument;
                         }
                         try ipatterns_list.append(gpa, argv[n]);
@@ -1029,7 +1021,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                         flag.J = false;
                         lc = html.ListingCalls();
                         if (argv[n] == null) {
-                            _ = c.fprintf(cStderr(), "tree: Missing argument to -H option.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Missing argument to -H option.\n");
                             return error.InvalidArgument;
                         }
                         host = argv[n];
@@ -1045,7 +1037,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     },
                     'T' => {
                         if (argv[n] == null) {
-                            _ = c.fprintf(cStderr(), "tree: Missing argument to -T option.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Missing argument to -T option.\n");
                             return error.InvalidArgument;
                         }
                         title = argv[n];
@@ -1065,20 +1057,20 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             sLevel = argv[n];
                             n += 1;
                             if (sLevel == null) {
-                                _ = c.fprintf(cStderr(), "tree: Missing argument to -L option.\n");
+                                _ = c.fprintf(c.Stderr(), "tree: Missing argument to -L option.\n");
                                 return error.InvalidArgument;
                             }
                         }
                         Level = @intCast(c.strtoul(sLevel, null, 0));
                         Level -= 1;
                         if (Level < 0) {
-                            _ = c.fprintf(cStderr(), "tree: Invalid level, must be greater than 0.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Invalid level, must be greater than 0.\n");
                             return error.InvalidArgument;
                         }
                     },
                     'o' => {
                         if (argv[n] == null) {
-                            _ = c.fprintf(cStderr(), "tree: Missing argument to -o option.\n");
+                            _ = c.fprintf(c.Stderr(), "tree: Missing argument to -o option.\n");
                             return error.InvalidArgument;
                         }
                         outfilename = argv[n];
@@ -1184,7 +1176,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                     }
                                 }
                                 if (sorts[k].name == null) {
-                                    _ = c.fprintf(cStderr(), "tree: Sort type '%s' not valid, should be one of: ", arg);
+                                    _ = c.fprintf(c.Stderr(), "tree: Sort type '%s' not valid, should be one of: ", arg);
                                     k = 0;
                                     while (sorts[k].name != null) : (k += 1) {
                                         _ = c.printf("%s%c", sorts[k].name, @as(c_int, if (sorts[k + 1].name != null) ',' else '\n'));
@@ -1215,7 +1207,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 flag.gitignore = true;
                                 const new_ig = filter.new_ignorefile(util.io, arg, arg, false);
                                 if (new_ig != null) filter.push_filterstack(new_ig) else {
-                                    _ = c.fprintf(cStderr(), "tree: Could not load gitignore file\n");
+                                    _ = c.fprintf(c.Stderr(), "tree: Could not load gitignore file\n");
                                     return error.InvalidArgument;
                                 }
                                 break;
@@ -1235,7 +1227,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 flag.showinfo = true;
                                 const new_inf = info_mod.new_infofile(arg, false);
                                 if (new_inf != null) info_mod.push_infostack(new_inf) else {
-                                    _ = c.fprintf(cStderr(), "tree: Could not load infofile\n");
+                                    _ = c.fprintf(c.Stderr(), "tree: Could not load infofile\n");
                                     return error.InvalidArgument;
                                 }
                                 break;
@@ -1314,16 +1306,16 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                     break;
                                 }
                             }
-                            _ = c.fprintf(cStderr(), "tree: Invalid argument `%s'.\n", argv[i]);
+                            _ = c.fprintf(c.Stderr(), "tree: Invalid argument `%s'.\n", argv[i]);
                             help.print_all();
                             return error.InvalidArgument;
                         }
-                        _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
+                        _ = c.fprintf(c.Stderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         help.print_all();
                         return error.InvalidArgument;
                     },
                     else => {
-                        _ = c.fprintf(cStderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
+                        _ = c.fprintf(c.Stderr(), "tree: Invalid argument -`%c'.\n", @as(c_int, argv[i][j]));
                         help.print_all();
                         return error.InvalidArgument;
                     },
@@ -1351,7 +1343,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
     if (outfilename != null) {
         const name = std.mem.span(@as([*:0]const u8, @ptrCast(outfilename.?)));
         util.file = std.Io.Dir.cwd().createFile(util.io, name, .{}) catch {
-            _ = c.fprintf(cStderr(), "tree: invalid filename '%s'\n", outfilename);
+            _ = c.fprintf(c.Stderr(), "tree: invalid filename '%s'\n", outfilename);
             return error.InvalidOutputFile;
         };
     }
@@ -1382,7 +1374,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
         // If the hostname is longer than PATH_MAX, maybe it's just as well we don't
         // try to use it.
         if (c.gethostname(&xpattern, std.fs.max_path_bytes) < 0) {
-            _ = c.fprintf(cStderr(), "Unable to get hostname, using 'localhost'.\n");
+            _ = c.fprintf(c.Stderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
             authority = util.scopy(&xpattern);
