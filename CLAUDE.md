@@ -72,6 +72,47 @@ musl's `struct_timespec` uses bitfield padding that Zig's C translator demotes t
 | `src/json.zig`, `src/xml.zig`, `src/html.zig` | Output format callbacks |
 | `src/man.zig` | Embedded man page (generated — see `scripts/generate_full_man.py`) |
 
+### Module dependency graph
+
+Layered top-down (each module only imports things below it). `types` and `util` are leaf-ish foundations imported almost everywhere; arrows below show the non-foundational edges only.
+
+```
+main ──┬─► man
+       └─► tree ──┬─► list ───┬─► filter ──► info ──► pattern
+                  │           │              ▲          ▲
+                  │           ├─► html ──────┘          │
+                  │           ├─► info ─────────────────┤
+                  │           ├─► linux                 │
+                  │           └─► hash                  │
+                  ├─► file ───┬─► filter                │
+                  │           ├─► info ─────────────────┤
+                  │           ├─► list                  │
+                  │           └─► pattern ──────────────┘
+                  ├─► unix ───┬─► color
+                  │           ├─► html
+                  │           └─► info
+                  ├─► json ───► hash
+                  ├─► xml  ───┬─► hash
+                  │           └─► html
+                  ├─► help ──► color
+                  ├─► color
+                  ├─► strverscmp
+                  └─► (also: filter, hash, html, info, json, linux, pattern, xml directly)
+
+Foundations (imported widely):
+  util ──► types
+  linux ──► util
+  pattern ──► types, util
+  color ──► types, util
+  html ──► types, util
+```
+
+Notable invariants:
+- `tree.zig` is the C-ABI boundary (most `export var`/`export fn`); leaf modules must not import it.
+- `filter` ↔ `info` cycle was broken by moving `gittrim` → `util` and `new_pattern` → `pattern`. `info` no longer imports `filter`; `filter` imports `info` (for `pushFiles`).
+- `list.zig` owns the tree-traversal globals (`getfulltree`, `basesort`, `topsort`) and the per-`-o` file swap; `tree.zig` writes them at startup.
+- `util.zig` owns the shared `io`/`file` writer state used by every renderer.
+
 ### Testing
 
 - **Unit tests** live inside `src/*.zig` files and are aggregated via `src/tests.zig`'s `test { ... }` block. Output renderer modules are not currently imported by the unit-test root because their callbacks bind to runtime globals used by the full executable.

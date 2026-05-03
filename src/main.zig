@@ -3,24 +3,22 @@ const std = @import("std");
 const man = @import("man.zig");
 const tree = @import("tree.zig");
 
-pub fn printStdout(content: []const u8) !void {
+pub fn printStdout(io: std.Io, content: []const u8) !void {
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
     try stdout.writeAll(content);
     try stdout.flush();
 }
 
-pub fn main() !void {
-    const allocator = std.heap.c_allocator;
+pub fn main(init: std.process.Init) !void {
+    const allocator = init.gpa;
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
 
-    const args = try std.process.argsAlloc(allocator);
-    defer std.process.argsFree(allocator, args);
-
-    if (args.len == 2 and std.mem.eql(u8, args[1], "man")) {
-        try printStdout(man.content);
+    if (args.len == 2 and (std.mem.eql(u8, args[1], "man") or std.mem.eql(u8, args[1], "--man"))) {
+        try printStdout(init.io, man.content);
         return;
     }
 
-    try tree.run(allocator, args);
+    try tree.run(allocator, args, init.io, init.environ_map);
 }

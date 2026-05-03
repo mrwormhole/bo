@@ -21,9 +21,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
-    exe.linkLibC();
+    exe.root_module.linkSystemLibrary("c", .{});
     // Add a dedicated include dir that only exposes tree.h to the C importer.
-    exe.addAfterIncludePath(b.path("."));
+    exe.root_module.addIncludePath(b.path("."));
     addPreprocessorDefines(exe, target);
 
     return exe;
@@ -80,8 +80,8 @@ fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
             .optimize = optimize,
         }),
     });
-    tests.linkLibC();
-    tests.addIncludePath(b.path("."));
+    tests.root_module.linkSystemLibrary("c", .{});
+    tests.root_module.addIncludePath(b.path("."));
     addPreprocessorDefines(tests, target);
 
     const test_cmd = b.addRunArtifact(tests);

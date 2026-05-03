@@ -4,8 +4,21 @@ const c = @cImport({
     @cInclude("tree.h");
 });
 
+const types = @import("types.zig");
+const util = @import("util.zig");
+
 fn lower(ch: u8, ignore_case: bool) u8 {
     return if (ignore_case) @intCast(c.tolower(ch)) else ch;
+}
+
+pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
+    const p: *types.Pattern = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Pattern))));
+    const offset: usize = if (pattern[0] == '/') 1 else 0;
+    p.pattern = util.scopy(pattern + offset);
+    const sl = c.strchr(pattern, '/');
+    p.relative = @intFromBool(sl == null or sl[1] == 0);
+    p.next = null;
+    return p;
 }
 
 // Patmatch() code courtesy of Thomas Moore (dark@mama.indstate.edu)
@@ -125,9 +138,9 @@ pub fn ignore(name: [*c]const u8, ipatterns: []const [*c]u8, isdir: bool, checkp
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
             var pc: [*c]const u8 = c.strchr(name, path_sep);
-            while (pc != null and pc.?[0] != 0) {
-                if (match(pc.? + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = c.strchr(pc.? + 1, path_sep);
+            while (pc != null and pc[0] != 0) {
+                if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
+                pc = c.strchr(pc + 1, path_sep);
             }
         }
     }
@@ -140,9 +153,9 @@ pub fn include(name: [*c]const u8, patterns: []const [*c]u8, isdir: bool, checkp
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
             var pc: [*c]const u8 = c.strchr(name, path_sep);
-            while (pc != null and pc.?[0] != 0) {
-                if (match(pc.? + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = c.strchr(pc.? + 1, path_sep);
+            while (pc != null and pc[0] != 0) {
+                if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
+                pc = c.strchr(pc + 1, path_sep);
             }
         }
     }

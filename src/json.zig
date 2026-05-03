@@ -22,9 +22,9 @@ const c = @cImport({
 
 const types = @import("types.zig");
 const hash = @import("hash.zig");
+const util = @import("util.zig");
 
 extern var flag: types.Flags;
-extern var outfile: *std.fs.File;
 
 const ifmt = @extern([*]const c.mode_t, .{ .name = "ifmt" });
 const ftype = @extern([*]const [*c]const u8, .{ .name = "ftype" });
@@ -101,14 +101,14 @@ fn fillinfo(w: *std.Io.Writer, ent: *types.Info) void {
 
 pub fn intro() void {
     var buf: [64]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.print("[{s}", .{nl()}) catch {};
 }
 
 pub fn outtro() void {
     var buf: [64]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.print("{s}]\n", .{nl()}) catch {};
 }
@@ -117,7 +117,7 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = dirname;
 
     var buf: [256]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     if (!flag.noindent) indent(&fw.interface, level);
@@ -137,7 +137,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
     _ = dirname;
 
     var buf: [4096]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     var direrr = false;
 
@@ -176,7 +176,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
 
 pub fn printerror(err: [*c]u8) c_int {
     var buf: [512]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.print("{{\"error\": \"{s}\"}}", .{std.mem.span(err)}) catch {};
     return 0;
@@ -187,7 +187,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
     _ = level;
     _ = postdir;
     var buf: [64]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     const comma: []const u8 = if (needcomma != 0) "," else "";
     fw.interface.print("{s}{s}", .{ comma, nl() }) catch {};
@@ -197,7 +197,7 @@ pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = file;
 
     var buf: [256]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     if (!flag.noindent) indent(&fw.interface, level);
@@ -207,7 +207,7 @@ pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
 
 pub fn report(tot: types.Totals) void {
     var buf: [256]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     fw.interface.writeByte(',') catch {};

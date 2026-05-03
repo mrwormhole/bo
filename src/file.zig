@@ -11,20 +11,16 @@ const pat = @import("pattern.zig");
 const util = @import("util.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
+const list = @import("list.zig");
 
 extern var flag: types.Flags;
 extern var pattern: c_int;
 extern var ipattern: c_int;
-extern var topsort: ?*const fn (
-    [*c][*c]types.Info,
-    [*c][*c]types.Info,
-) callconv(.c) c_int;
 extern var file_comment: [*c]u8;
 extern var file_pathsep: [*c]u8;
 extern var patterns: [*c][*c]u8;
 extern var ipatterns: [*c][*c]u8;
 
-extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
 extern fn free_dir(d: [*c][*c]types.Info) void;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
@@ -151,7 +147,7 @@ fn fprune(
 
     var ig: [*c]types.IgnoreFile = null;
     var inf: [*c]types.InfoFile = null;
-    push_files(path, @ptrCast(&ig), @ptrCast(&inf), root);
+    filter.pushFiles(path, @ptrCast(&ig), @ptrCast(&inf), root);
 
     var ent: [*c]types.Info = head;
     while (ent != null) {
@@ -266,9 +262,8 @@ fn fprune(
         }
         arr[count] = null;
 
-        if (topsort != null and count > 1) {
-            const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-            c.qsort(@ptrCast(arr), count, @sizeOf([*c]types.Info), cmp);
+        if (list.topsort != null and count > 1) {
+            std.mem.sort([*c]types.Info, arr[0..count], list.topsort.?, list.infoLessThan);
         }
         dir = arr;
     }
@@ -285,7 +280,7 @@ pub fn file_getfulltree(
     dev: c.dev_t,
     size: *c.off_t,
     err: [*c][*c]u8,
-) callconv(.c) [*c][*c]types.Info {
+) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -341,7 +336,7 @@ pub fn file_getfulltree(
                     } else {
                         ent[0].mode = @intCast(std.posix.S.IFREG);
                     }
-                    cwd_ptr = &(ent[0].tchild);
+                    cwd_ptr = @ptrCast(&(ent[0].tchild));
                 },
                 .T_EOP => break,
             }
@@ -367,7 +362,7 @@ pub fn tabedfile_getfulltree(
     dev: c.dev_t,
     size: *c.off_t,
     err: [*c][*c]u8,
-) callconv(.c) [*c][*c]types.Info {
+) [*c][*c]types.Info {
     _ = lev;
     _ = dev;
     _ = err;
@@ -427,7 +422,7 @@ pub fn tabedfile_getfulltree(
             continue;
         }
 
-        const dir_ptr: *[*c]types.Info = if (tabs != 0) &(istack[tabs - 1][0].tchild) else &root;
+        const dir_ptr: *[*c]types.Info = if (tabs != 0) @ptrCast(&(istack[tabs - 1][0].tchild)) else &root;
         const ent: [*c]types.Info = search(dir_ptr, spath);
         istack[tabs] = ent;
         ent[0].mode = @intCast(std.posix.S.IFREG);

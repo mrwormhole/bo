@@ -7,6 +7,7 @@ const c = @cImport({
 });
 
 const types = @import("types.zig");
+const util = @import("util.zig");
 
 extern var flag: types.Flags;
 
@@ -18,8 +19,6 @@ extern var sp: [*c]const u8;
 extern var title: [*c]const u8;
 extern var Hintro: [*c]const u8;
 extern var Houtro: [*c]const u8;
-
-extern var outfile: *std.fs.File;
 
 // Still in tree.zig
 extern fn psize(buf: [*c]u8, size: c.off_t) c_int;
@@ -79,7 +78,7 @@ fn fcat(w: *std.Io.Writer, filename: [*c]const u8) void {
 
 pub fn intro() void {
     var buf: [4096]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     if (Hintro != null) {
@@ -125,7 +124,7 @@ pub fn intro() void {
 
 pub fn outtro() void {
     var buf: [256]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     if (Houtro != null) {
@@ -156,7 +155,7 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
     _ = fillinfo(&info, file);
 
     var buf: [1024]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     const sp_s = std.mem.span(sp);
 
@@ -181,7 +180,7 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
 
 pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend: c_int) c_int {
     var buf: [4096]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     fw.interface.writeAll("<a") catch {};
@@ -233,7 +232,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
 
 pub fn printerror(err: [*c]u8) c_int {
     var buf: [512]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.print("  [{s}]", .{std.mem.span(err)}) catch {};
     return 0;
@@ -245,7 +244,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
     _ = postdir;
     _ = needcomma;
     var buf: [16]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.writeAll("<br>\n") catch {};
 }
@@ -255,7 +254,7 @@ pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
     _ = needcomma;
     if (file) |f| {
         var buf: [256]u8 = undefined;
-        var fw = outfile.writer(&buf);
+        var fw = util.writer(&buf);
         defer fw.interface.flush() catch {};
         fw.interface.print("</{s}><br>\n", .{std.mem.span(f.tag)}) catch {};
     }
@@ -263,7 +262,7 @@ pub fn close(file: ?*types.Info, level: c_int, needcomma: c_int) void {
 
 pub fn report(tot: types.Totals) void {
     var buf: [512]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     var pbuf: [256]u8 = undefined;
 

@@ -22,15 +22,14 @@ const util = @import("util.zig");
 const hash = @import("hash.zig");
 const help = @import("help.zig");
 const linux = @import("linux.zig");
+const list = @import("list.zig");
 
 // ---------------------------------------------------------------------------
 // Extern from color.zig
 // ---------------------------------------------------------------------------
 extern var linedraw: [*c]const types.LineDraw;
 
-// list.zig
-// extern fn emit_tree(dirname: [*c][*c]u8, needfulltree: bool) void;
-const emit_tree = @import("list.zig").emit_tree;
+const emit_tree = list.emit_tree;
 
 // unix.zig
 const unix = @import("unix.zig");
@@ -59,17 +58,11 @@ export var file_pathsep: [*c]u8 = @constCast("/");
 export var timefmt: [*c]u8 = null;
 export var charset: [*c]const u8 = null;
 
-const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, *c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
-const SortFn = fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
-
-export var getfulltree: *const GetFullTreeFn = &unix_getfulltree;
-export var basesort: ?*const SortFn = &alnumsort;
-export var topsort: ?*const SortFn = null;
+const SortFn = list.SortFn;
 
 var sLevel: [*c]u8 = null;
+var locale_ignores_dot_for_sort: bool = false;
 
-var _outfile: std.fs.File = undefined;
-export const outfile: *std.fs.File = &_outfile;
 export var dirs: [*c]c_int = null;
 export var Level: isize = 0;
 export var maxdirs: usize = 0;
@@ -356,9 +349,9 @@ export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
         const has_next: bool = dirs[@intCast(i + 1)] != 0;
         const bar_here: bool = dirs[@intCast(i)] == 1;
         const seg: []const u8 = if (has_next)
-            (if (bar_here) std.mem.span(linedraw.*.vert[clvl]) else (if (flag.H) htmlspaces[clvl] else spaces[clvl]))
+            (if (bar_here) std.mem.span(linedraw[0].vert[clvl]) else (if (flag.H) htmlspaces[clvl] else spaces[clvl]))
         else
-            (if (bar_here) std.mem.span(linedraw.*.vert_left[clvl]) else std.mem.span(linedraw.*.corner[clvl]));
+            (if (bar_here) std.mem.span(linedraw[0].vert_left[clvl]) else std.mem.span(linedraw[0].corner[clvl]));
         w.writeAll(seg) catch {};
         if (flag.remove_space != true) w.writeAll(space) catch {};
     }
@@ -369,55 +362,81 @@ export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
 // ---------------------------------------------------------------------------
 
 // filesfirst and dirsfirst are now top-level meta-sorts.
-export fn filesfirst(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    if (a[0].*.isdir != b[0].*.isdir) {
-        return if (a[0].*.isdir) 1 else -1;
+fn filesfirst(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    if (a[0].isdir != b[0].isdir) {
+        return if (a[0].isdir) 1 else -1;
     }
-    return basesort.?(a, b);
+    return list.basesort.?(a, b);
 }
 
-export fn dirsfirst(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    if (a[0].*.isdir != b[0].*.isdir) {
-        return if (a[0].*.isdir) -1 else 1;
+fn dirsfirst(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    if (a[0].isdir != b[0].isdir) {
+        return if (a[0].isdir) -1 else 1;
     }
-    return basesort.?(a, b);
+    return list.basesort.?(a, b);
 }
 
-export fn alnumsort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    const v = c.strcoll(a[0].*.name, b[0].*.name);
+fn sortName(name: [*c]u8) [*c]u8 {
+    if (!locale_ignores_dot_for_sort) return name;
+    if (name[0] == '.' and name[1] != 0) return name + 1;
+    return name;
+}
+
+fn isCLocale(value: []const u8) bool {
+    return std.mem.eql(u8, value, "C") or
+        std.mem.eql(u8, value, "POSIX") or
+        std.mem.startsWith(u8, value, "C.");
+}
+
+fn localeIgnoresDotForSort(environ: *std.process.Environ.Map) bool {
+    const locale = environ.get("LC_ALL") orelse
+        environ.get("LC_COLLATE") orelse
+        environ.get("LANG") orelse
+        return false;
+    return locale.len != 0 and !isCLocale(locale);
+}
+
+fn namecoll(a: [*c]u8, b: [*c]u8) c_int {
+    const v = c.strcoll(sortName(a), sortName(b));
+    if (v != 0) return v;
+    return c.strcoll(a, b);
+}
+
+fn alnumsort(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    const v = namecoll(a[0].name, b[0].name);
     return if (flag.reverse) -v else v;
 }
 
-export fn versort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    const v = strverscmp(a[0].*.name, b[0].*.name);
+fn versort(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    const v = strverscmp(a[0].name, b[0].name);
     return if (flag.reverse) -v else v;
 }
 
-export fn mtimesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    if (a[0].*.mtime == b[0].*.mtime) {
-        const v = c.strcoll(a[0].*.name, b[0].*.name);
+fn mtimesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    if (a[0].mtime == b[0].mtime) {
+        const v = namecoll(a[0].name, b[0].name);
         return if (flag.reverse) -v else v;
     }
-    const v: c_int = if (a[0].*.mtime < b[0].*.mtime) -1 else 1;
+    const v: c_int = if (a[0].mtime < b[0].mtime) -1 else 1;
     return if (flag.reverse) -v else v;
 }
 
-export fn ctimesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    if (a[0].*.ctime == b[0].*.ctime) {
-        const v = c.strcoll(a[0].*.name, b[0].*.name);
+fn ctimesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    if (a[0].ctime == b[0].ctime) {
+        const v = namecoll(a[0].name, b[0].name);
         return if (flag.reverse) -v else v;
     }
-    const v: c_int = if (a[0].*.ctime < b[0].*.ctime) -1 else 1;
+    const v: c_int = if (a[0].ctime < b[0].ctime) -1 else 1;
     return if (flag.reverse) -v else v;
 }
 
-export fn sizecmp(a: c.off_t, b: c.off_t) c_int {
+fn sizecmp(a: c.off_t, b: c.off_t) c_int {
     return if (a == b) 0 else if (a < b) 1 else -1;
 }
 
-export fn fsizesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
-    var v = sizecmp(@intCast(a[0].*.size), @intCast(b[0].*.size));
-    if (v == 0) v = c.strcoll(a[0].*.name, b[0].*.name);
+fn fsizesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
+    var v = sizecmp(@intCast(a[0].size), @intCast(b[0].size));
+    if (v == 0) v = namecoll(a[0].name, b[0].name);
     return if (flag.reverse) -v else v;
 }
 
@@ -427,17 +446,17 @@ export fn fsizesort(a: [*c][*c]types.Info, b: [*c][*c]types.Info) c_int {
 
 fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
     if (comptime builtin.os.tag == .linux) {
-        var lst: std.os.linux.Stat = undefined;
+        var lst: std.os.linux.Statx = undefined;
         if (!linux.stat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &lst)) return false;
         ent.mode = @intCast(lst.mode);
         ent.uid = @intCast(lst.uid);
         ent.gid = @intCast(lst.gid);
         ent.size = @intCast(lst.size);
-        ent.ldev = @intCast(lst.dev);
+        ent.ldev = @intCast(linux.devId(&lst));
         ent.linode = @intCast(lst.ino);
-        ent.atime = @intCast(lst.atim.sec);
-        ent.ctime = @intCast(lst.ctim.sec);
-        ent.mtime = @intCast(lst.mtim.sec);
+        ent.atime = @intCast(lst.atime.sec);
+        ent.ctime = @intCast(lst.ctime.sec);
+        ent.mtime = @intCast(lst.mtime.sec);
         return true;
     } else {
         var lst: c.struct_stat = undefined;
@@ -483,10 +502,10 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if ((lst_mode & c.S_IFMT) == @as(c.mode_t, c.S_IFLNK)) {
         if (comptime builtin.os.tag == .linux) {
-            var lxst: std.os.linux.Stat = undefined;
+            var lxst: std.os.linux.Statx = undefined;
             if (linux.stat(@ptrCast(path), 0, &lxst)) {
                 st_mode = @intCast(lxst.mode);
-                st_dev = @intCast(lxst.dev);
+                st_dev = @intCast(linux.devId(&lxst));
                 st_ino = @intCast(lxst.ino);
             } else {
                 rs = -1;
@@ -669,38 +688,10 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
     return dl;
 }
 
-export fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void {
-    var path_buf: [c.PATH_MAX]u8 = undefined;
-
-    if (flag.gitignore) {
-        var tig: ?*types.IgnoreFile = null;
-        // Not going to implement git configs so no core.excludesFile support.
-        if (top) {
-            const stmp = c.getenv("GIT_DIR");
-            if (stmp != null) {
-                var segs = [_][*c]u8{ &path_buf, stmp, @constCast("info/exclude") };
-                filter.push_filterstack(filter.new_ignorefile(stmp, util.pathconcat(@ptrCast(&segs), 3), false));
-                tig = filter.new_ignorefile(stmp, util.pathconcat(@ptrCast(&segs), 3), false);
-            }
-        }
-        if (top) {
-            ig.* = filter.gitignore_search(dir, 0);
-        } else {
-            ig.* = filter.new_ignorefile(dir, dir, top);
-            filter.push_filterstack(ig.*);
-        }
-        if (ig.* == null) ig.* = tig;
-    }
-    if (flag.showinfo) {
-        inf.* = info_mod.new_infofile(dir, top);
-        info_mod.push_infostack(inf.*);
-    }
-}
-
 // This is for all the impossible things people wanted the old tree to do.
 // This can and will use a large amount of memory for large directory trees
 // and also take some time.
-export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
+fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
     var pathsize: usize = 0;
@@ -715,9 +706,9 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     if (Level >= 0 and lev > @as(c.u_long, @intCast(Level))) return null;
     if (flag.xdev and lev == 0) {
         if (comptime builtin.os.tag == .linux) {
-            var lst: std.os.linux.Stat = undefined;
+            var lst: std.os.linux.Statx = undefined;
             if (linux.stat(@ptrCast(d), 0, &lst)) {
-                dev = @intCast(lst.dev);
+                dev = @intCast(linux.devId(&lst));
             }
         } else {
             var sb: c.struct_stat = undefined;
@@ -731,7 +722,7 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
         pattern = 0;
     }
 
-    push_files(d, @ptrCast(&ig), @ptrCast(&inf), lev == 0);
+    filter.pushFiles(d, @ptrCast(&ig), @ptrCast(&inf), lev == 0);
 
     sav = read_dir(d, &n, @intFromBool(inf != null));
     dir_ptr = sav;
@@ -844,9 +835,8 @@ export fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: [*c]
     }
 
     // sorting needs to be deferred for --du:
-    if (topsort != null) {
-        const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-        c.qsort(@ptrCast(sav), @intCast(n), @sizeOf([*c]types.Info), cmp);
+    if (list.topsort != null) {
+        std.mem.sort([*c]types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
     c.free(path);
@@ -899,7 +889,7 @@ pub const RunError = std.mem.Allocator.Error || error{
     TreeHadErrors,
 };
 
-pub fn run(gpa: std.mem.Allocator, args: []const [:0]u8) RunError!void {
+pub fn run(gpa: std.mem.Allocator, args: []const [:0]const u8, io: std.Io, environ: *std.process.Environ.Map) RunError!void {
     var argv_buf = try gpa.alloc([*c]u8, args.len + 1);
     defer gpa.free(argv_buf);
 
@@ -908,14 +898,17 @@ pub fn run(gpa: std.mem.Allocator, args: []const [:0]u8) RunError!void {
     }
     argv_buf[args.len] = null;
 
-    try runWithArgv(gpa, argv_buf[0..args.len :null]);
+    try runWithArgv(gpa, argv_buf[0..args.len :null], io, environ);
 }
 
-fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void {
+fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, environ: *std.process.Environ.Map) RunError!void {
     const argc = argv_slice.len;
     const argv: [*c][*c]u8 = argv_slice.ptr;
 
-    _outfile = std.fs.File.stdout();
+    list.getfulltree = &unix_getfulltree;
+    list.basesort = &alnumsort;
+    list.topsort = null;
+    util.init(io, std.Io.File.stdout());
     var dirname: [*c][*c]u8 = null;
 
     var patterns_list = try std.ArrayList([*c]u8).initCapacity(gpa, 16);
@@ -947,9 +940,10 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
 
     _ = c.setlocale(c.LC_CTYPE, "");
     _ = c.setlocale(c.LC_COLLATE, "");
+    locale_ignores_dot_for_sort = localeIgnoresDotForSort(environ);
 
-    if (std.posix.getenv("TREE_CHARSET")) |env_charset| {
-        charset = env_charset.ptr;
+    if (environ.get("TREE_CHARSET")) |env_charset| {
+        charset = @ptrCast(env_charset.ptr);
     } else {
         const codeset = c.nl_langinfo(c.CODESET);
         if (c.strcmp(codeset, "UTF-8") == 0 or c.strcmp(codeset, "utf8") == 0) {
@@ -972,7 +966,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                 flag.J = true;
                 flag.noindent = true;
                 lc = json.ListingCalls();
-                _outfile = .{ .handle = @intCast(std_fd) };
+                util.file = .{ .handle = @intCast(std_fd), .flags = .{ .nonblocking = false } };
             }
         }
     }
@@ -1026,14 +1020,14 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                     'A' => flag.ansilines = if (opt_toggle) !flag.ansilines else true,
                     'S' => charset = "IBM437",
                     'D' => flag.D = if (opt_toggle) !flag.D else true,
-                    't' => basesort = &mtimesort,
+                    't' => list.basesort = &mtimesort,
                     'c' => {
-                        basesort = &ctimesort;
+                        list.basesort = &ctimesort;
                         flag.c = true;
                     },
                     'r' => flag.reverse = if (opt_toggle) !flag.reverse else true,
-                    'v' => basesort = &versort,
-                    'U' => basesort = null,
+                    'v' => list.basesort = &versort,
+                    'U' => list.basesort = null,
                     'X' => {
                         flag.X = true;
                         flag.H = false;
@@ -1144,12 +1138,12 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             }
                             if (c.strcmp("--dirsfirst", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
-                                topsort = &dirsfirst;
+                                list.topsort = &dirsfirst;
                                 break;
                             }
                             if (c.strcmp("--filesfirst", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
-                                topsort = &filesfirst;
+                                list.topsort = &filesfirst;
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--filelimit");
@@ -1198,11 +1192,11 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             }
                             arg = try longArg(argv, i, &j, &n, "--sort");
                             if (arg != null) {
-                                basesort = null;
+                                list.basesort = null;
                                 k = 0;
                                 while (sorts[k].name != null) : (k += 1) {
                                     if (c.strcasecmp(sorts[k].name, arg) == 0) {
-                                        basesort = sorts[k].cmpfunc;
+                                        list.basesort = sorts[k].cmpfunc;
                                         break;
                                     }
                                 }
@@ -1219,13 +1213,13 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             if (c.strcmp("--fromtabfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &file_mod.tabedfile_getfulltree;
+                                list.getfulltree = &file_mod.tabedfile_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--fromfile", argv[i]) == 0) {
                                 j = c.strlen(argv[i]) - 1;
                                 flag.fromfile = true;
-                                getfulltree = &file_mod.file_getfulltree;
+                                list.getfulltree = &file_mod.file_getfulltree;
                                 break;
                             }
                             if (c.strcmp("--metafirst", argv[i]) == 0) {
@@ -1236,7 +1230,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
                             arg = try longArg(argv, i, &j, &n, "--gitfile");
                             if (arg != null) {
                                 flag.gitignore = true;
-                                const new_ig = filter.new_ignorefile(arg, arg, false);
+                                const new_ig = filter.new_ignorefile(util.io, arg, arg, false);
                                 if (new_ig != null) filter.push_filterstack(new_ig) else {
                                     _ = c.fprintf(cStderr(), "tree: Could not load gitignore file\n");
                                     return error.InvalidArgument;
@@ -1373,7 +1367,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
 
     if (outfilename != null) {
         const name = std.mem.span(@as([*:0]const u8, @ptrCast(outfilename.?)));
-        _outfile = std.fs.cwd().createFile(name, .{}) catch {
+        util.file = std.Io.Dir.cwd().createFile(util.io, name, .{}) catch {
             _ = c.fprintf(cStderr(), "tree: invalid filename '%s'\n", outfilename);
             return error.InvalidOutputFile;
         };
@@ -1384,7 +1378,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
 
     if (showversion) {
         var vbuf: [256]u8 = undefined;
-        var vfw = outfile.writer(&vbuf);
+        var vfw = util.writer(&vbuf);
         vfw.interface.print("{s}\n", .{std.mem.span(version)}) catch {};
         vfw.interface.flush() catch {};
         return;
@@ -1395,8 +1389,8 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
         dirname[0] = util.scopy(".");
         dirname[1] = null;
     }
-    if (topsort == null) topsort = basesort;
-    if (basesort == null) topsort = null;
+    if (list.topsort == null) list.topsort = list.basesort;
+    if (list.basesort == null) list.topsort = null;
     if (timefmt != null) _ = c.setlocale(c.LC_TIME, "");
     if (flag.d) flag.prune = false;
     if (flag.R and Level == -1) flag.R = false;
@@ -1420,7 +1414,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8) RunError!void 
 
     emit_tree(lc, dirname, needfulltree);
 
-    if (outfilename != null) outfile.close();
+    if (outfilename != null) util.file.close(util.io);
 
     if (errors != 0) return error.TreeHadErrors;
 }
