@@ -1,5 +1,7 @@
 //! Pattern matching functions ported from tree.c.
 
+const std = @import("std");
+
 const c = @import("cstd.zig");
 
 const types = @import("types.zig");
@@ -9,15 +11,12 @@ fn lower(ch: u8, ignore_case: bool) u8 {
     return if (ignore_case) @intCast(c.tolower(ch)) else ch;
 }
 
-// TODO: should probably use std.fs.seperator instead of hardcoding '/' but this is easier for now
-// std.fs.path.sep_str is not a compile-time constant, so we can't use it in the pattern matching code without some refactoring
-// also types.Pattern needs to be in this file here.
 pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
     const p: *types.Pattern = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Pattern))));
-    const offset: usize = if (pattern[0] == '/') 1 else 0;
+    const offset: usize = if (pattern[0] == std.fs.path.sep) 1 else 0;
     p.pattern = util.scopy(pattern + offset);
-    const sl = c.strchr(pattern, '/');
-    p.relative = @intFromBool(sl == null or sl[1] == 0);
+    const sl = std.mem.findScalar(u8, c.strSpan(pattern), std.fs.path.sep);
+    p.relative = @intFromBool(sl == null or pattern[sl.? + 1] == 0);
     p.next = null;
     return p;
 }
@@ -35,7 +34,7 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
     var buf = buf_in;
     var pat = pat_in;
 
-    const bar: [*c]u8 = c.strchr(pat, '|');
+    const bar: [*c]u8 = if (std.mem.findScalar(u8, c.strSpan(pat), '|')) |idx| pat + idx else null;
 
     if (bar != null) {
         if (bar == pat or bar[1] == 0) return -1;
@@ -77,7 +76,9 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
             },
             '*' => {
                 pat += 1;
-                if (pat[0] == 0) return @intFromBool(c.strchr(buf, '/') == null);
+                if (pat[0] == 0) {
+                    return @intFromBool(std.mem.findScalar(u8, c.strSpan(buf), std.fs.path.sep) == null);
+                }
                 m = 0;
                 if (pat[0] == '*') {
                     pat += 1;
@@ -86,12 +87,12 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
                         m = match(buf, pat, isdir, ignore_case);
                         if (m != 0) break;
                         // ** between two /'s is allowed to match a null /:
-                        if (pprev == '/' and pat[0] == '/' and pat[1] != 0) {
+                        if (pprev == std.fs.path.sep and pat[0] == std.fs.path.sep and pat[1] != 0) {
                             m = match(buf, pat + 1, isdir, ignore_case);
                             if (m != 0) return m;
                         }
                         buf += 1;
-                        while (buf[0] != 0 and buf[0] != '/') : (buf += 1) {}
+                        while (buf[0] != 0 and buf[0] != std.fs.path.sep) : (buf += 1) {}
                     }
                 } else {
                     while (buf[0] != 0) {
@@ -99,17 +100,17 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
                         buf += 1;
                         m = match(old, pat, isdir, ignore_case);
                         if (m != 0) break;
-                        if (buf[0] == '/') break;
+                        if (buf[0] == std.fs.path.sep) break;
                     }
                 }
-                if (m == 0 and (buf[0] == 0 or buf[0] == '/')) m = match(buf, pat, isdir, ignore_case);
+                if (m == 0 and (buf[0] == 0 or buf[0] == std.fs.path.sep)) m = match(buf, pat, isdir, ignore_case);
                 return m;
             },
             '?' => {
                 if (buf[0] == 0) return 0;
                 buf += 1;
             },
-            '/' => {
+            std.fs.path.sep => {
                 if (pat[1] == 0 and buf[0] == 0) return @intFromBool(isdir);
                 m = @intFromBool(buf[0] == pat[0]);
                 buf += 1;
@@ -138,10 +139,10 @@ pub fn ignore(name: [*c]const u8, ipatterns: []const [*c]u8, isdir: bool, checkp
     for (ipatterns) |p| {
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
-            var pc: [*c]const u8 = c.strchr(name, path_sep);
+            var pc: [*c]const u8 = if (std.mem.findScalar(u8, c.strSpan(name), path_sep)) |idx| name + idx else null;
             while (pc != null and pc[0] != 0) {
                 if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = c.strchr(pc + 1, path_sep);
+                pc = if (std.mem.findScalar(u8, c.strSpan(pc + 1), path_sep)) |idx| pc + 1 + idx else null;
             }
         }
     }
@@ -153,10 +154,10 @@ pub fn include(name: [*c]const u8, patterns: []const [*c]u8, isdir: bool, checkp
     for (patterns) |p| {
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
-            var pc: [*c]const u8 = c.strchr(name, path_sep);
+            var pc: [*c]const u8 = if (std.mem.findScalar(u8, c.strSpan(name), path_sep)) |idx| name + idx else null;
             while (pc != null and pc[0] != 0) {
                 if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = c.strchr(pc + 1, path_sep);
+                pc = if (std.mem.findScalar(u8, c.strSpan(pc + 1), path_sep)) |idx| pc + 1 + idx else null;
             }
         }
     }

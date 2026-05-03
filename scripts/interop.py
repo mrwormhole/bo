@@ -204,6 +204,7 @@ CASES = [
 LOCALE_CASES = [
     ("UTF-8 locale default",   {"LC_ALL": "C.UTF-8"}, [], False),
     ("C locale (ASCII fallback)", {"LC_ALL": "C"},    [], False),
+    ("TREE_COLORS parsing (-C)", {"TREE_COLORS": "di=01;34:fi=00:ln=01;36:*.txt=01;32"}, ["-C"], False),
 ]
 
 

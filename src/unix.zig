@@ -127,7 +127,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
 
         var infosize: usize = 0;
         if (flag.metafirst) {
-            infosize = if (info_buf[0] == '[') c.strlen(&info_buf) + 2 else 0;
+            infosize = if (info_buf[0] == '[') c.strLen(&info_buf) + 2 else 0;
         }
 
         var lines: usize = 0;

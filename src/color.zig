@@ -289,16 +289,18 @@ fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * n))));
 
     nwrds.* = 0;
-    w[0] = c.strtok(str, delim);
-
-    while (w[nwrds.*] != null) {
+    var it = std.mem.splitAny(u8, std.mem.span(str), std.mem.span(delim));
+    while (it.next()) |token| {
         if (nwrds.* == (n - 2)) {
             n += 256;
             w = @as([*c][*c]u8, @ptrCast(@alignCast(util.xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
         }
+        const tok_ptr: [*c]u8 = @constCast(token.ptr);
+        tok_ptr[token.len] = 0;
+        w[nwrds.*] = tok_ptr;
         nwrds.* += 1;
-        w[nwrds.*] = c.strtok(null, delim);
     }
+    w[nwrds.*] = null;
 
     return w;
 }
@@ -333,7 +335,9 @@ fn cmd(s: [*c]u8) c_int {
     if (s[0] == '*') return DOT_EXTENSION;
 
     for (cmds) |cmd_entry| {
-        if (c.strcmp(cmd_entry.cmd, s) == 0) return @as(c_int, cmd_entry.cmdnum);
+        if (std.mem.eql(u8, c.strSpan(cmd_entry.cmd), c.strSpan(s))) {
+            return @as(c_int, cmd_entry.cmdnum);
+        }
     }
     return ERROR;
 }
@@ -363,7 +367,7 @@ pub fn parse_dir_colors() void {
     if (c.getenv("CLICOLOR_FORCE") != null and !flag.nocolor) flag.force_color = true;
     s = c.getenv("TREE_COLORS");
     if (s == null) s = c.getenv("LS_COLORS");
-    if ((s == null or c.strlen(s) == 0) and (flag.force_color or cc != 0)) {
+    if ((s == null or c.strLen(s) == 0) and (flag.force_color or cc != 0)) {
         s = ":no=00:rs=0:fi=00:di=01;34:ln=01;36:pi=40;33:so=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:ex=01;32:*.bat=01;32:*.BAT=01;32:*.btm=01;32:*.BTM=01;32:*.cmd=01;32:*.CMD=01;32:*.com=01;32:*.COM=01;32:*.dll=01;32:*.DLL=01;32:*.exe=01;32:*.EXE=01;32:*.arj=01;31:*.bz2=01;31:*.deb=01;31:*.gz=01;31:*.lzh=01;31:*.rpm=01;31:*.tar=01;31:*.taz=01;31:*.tb2=01;31:*.tbz2=01;31:*.tbz=01;31:*.tgz=01;31:*.tz2=01;31:*.z=01;31:*.Z=01;31:*.zip=01;31:*.ZIP=01;31:*.zoo=01;31:*.asf=01;35:*.ASF=01;35:*.avi=01;35:*.AVI=01;35:*.bmp=01;35:*.BMP=01;35:*.flac=01;35:*.FLAC=01;35:*.gif=01;35:*.GIF=01;35:*.jpg=01;35:*.JPG=01;35:*.jpeg=01;35:*.JPEG=01;35:*.m2a=01;35:*.M2a=01;35:*.m2v=01;35:*.M2V=01;35:*.mov=01;35:*.MOV=01;35:*.mp3=01;35:*.MP3=01;35:*.mpeg=01;35:*.MPEG=01;35:*.mpg=01;35:*.MPG=01;35:*.ogg=01;35:*.OGG=01;35:*.ppm=01;35:*.rm=01;35:*.RM=01;35:*.tga=01;35:*.TGA=01;35:*.tif=01;35:*.TIF=01;35:*.wav=01;35:*.WAV=01;35:*.wmv=01;35:*.WMV=01;35:*.xbm=01;35:*.xpm=01;35:";
     }
 
@@ -402,7 +406,7 @@ pub fn parse_dir_colors() void {
                 }
             },
             COL_LINK => {
-                if (c_ptr[1] != null and c.strcasecmp("target", c_ptr[1]) == 0) {
+                if (c_ptr[1] != null and std.ascii.eqlIgnoreCase(c.strSpan(c_ptr[1]), "target")) {
                     flag.linktargetcolor = true;
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
@@ -430,21 +434,21 @@ pub fn parse_dir_colors() void {
         color_code[@as(usize, @intCast(COL_RESET))] = util.scopy("0");
     }
     if (color_code[@as(usize, @intCast(COL_BOLD))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_BOLD))], "%s1%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ITALIC))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ITALIC))], "%s3%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ENDCODE))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const reset_len = c.strlen(color_code[@as(usize, @intCast(COL_RESET))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const reset_len = c.strLen(color_code[@as(usize, @intCast(COL_RESET))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + reset_len + rcode_len + 1))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ENDCODE))], "%s%s%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RESET))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
@@ -547,11 +551,11 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
         }
 
         // not a directory, link, special device, etc, so check for extension match
-        l = c.strlen(name);
+        l = c.strLen(name);
         while (e != null) : (e = e.?.nxt) {
-            xl = c.strlen(e.?.ext);
+            xl = c.strLen(e.?.ext);
             const name_ptr: [*c]const u8 = if (l > xl) name + (l - xl) else name;
-            if (c.strcmp(name_ptr, e.?.ext) == 0) {
+            if (std.mem.eql(u8, c.strSpan(name_ptr), c.strSpan(e.?.ext))) {
                 if (color_code[@as(usize, @intCast(COL_LEFTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (e.?.term_flg) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (color_code[@as(usize, @intCast(COL_RIGHTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
@@ -591,7 +595,7 @@ pub fn initlinedraw(help: bool) void {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                if (c.strcasecmp(charset, cstable[i].name[j]) == 0) {
+                if (std.ascii.eqlIgnoreCase(c.strSpan(charset), c.strSpan(cstable[i].name[j]))) {
                     linedraw = &cstable[i];
                     return;
                 }
