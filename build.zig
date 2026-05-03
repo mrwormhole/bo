@@ -51,6 +51,11 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
             exe.root_module.addCMacro("_POSIX_C_SOURCE", "200112");
         },
+        .freebsd => {
+            // Strict POSIX.1-2008 + XSI: hides BSD-only inline helpers
+            // (e.g. bintime_shift) that Zig's C translator currently rejects.
+            exe.root_module.addCMacro("_XOPEN_SOURCE", "700");
+        },
         else => {},
     }
 

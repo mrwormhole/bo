@@ -15,7 +15,7 @@ const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
 const linux = @import("linux.zig");
 
-pub const GetFullTreeFn = fn ([*c]u8, c.u_long, c.dev_t, *c.off_t, [*c][*c]u8) [*c][*c]types.Info;
+pub const GetFullTreeFn = fn ([*c]u8, c_ulong, c.dev_t, *c.off_t, [*c][*c]u8) [*c][*c]types.Info;
 pub const SortFn = fn ([*c]types.Info, [*c]types.Info) c_int;
 
 pub var getfulltree: *const GetFullTreeFn = undefined;

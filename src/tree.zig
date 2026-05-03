@@ -691,7 +691,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
 // This is for all the impossible things people wanted the old tree to do.
 // This can and will use a large amount of memory for large directory trees
 // and also take some time.
-fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
+fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
     var pathsize: usize = 0;
@@ -703,7 +703,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c.u_long, dev_in: c.dev_t, size: *c.off_t, e
     var tmp_pattern: c_int = 0;
 
     err.* = null;
-    if (Level >= 0 and lev > @as(c.u_long, @intCast(Level))) return null;
+    if (Level >= 0 and lev > @as(c_ulong, @intCast(Level))) return null;
     if (flag.xdev and lev == 0) {
         if (comptime builtin.os.tag == .linux) {
             var lst: std.os.linux.Statx = undefined;

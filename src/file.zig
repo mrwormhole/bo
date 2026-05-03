@@ -276,7 +276,7 @@ fn fprune(
 
 pub fn file_getfulltree(
     d: [*c]u8,
-    lev: c.u_long,
+    lev: c_ulong,
     dev: c.dev_t,
     size: *c.off_t,
     err: [*c][*c]u8,
@@ -358,7 +358,7 @@ pub fn file_getfulltree(
 
 pub fn tabedfile_getfulltree(
     d: [*c]u8,
-    lev: c.u_long,
+    lev: c_ulong,
     dev: c.dev_t,
     size: *c.off_t,
     err: [*c][*c]u8,
