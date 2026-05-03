@@ -108,17 +108,7 @@ pub extern "c" fn realloc(ptr: ?*anyopaque, size: usize) ?*anyopaque;
 pub extern "c" fn free(ptr: ?*anyopaque) void;
 pub extern "c" fn memcpy(noalias dest: ?*anyopaque, noalias src: ?*const anyopaque, n: usize) ?*anyopaque;
 
-pub extern "c" fn strlen(s: [*c]const u8) usize;
-pub extern "c" fn strcmp(s1: [*c]const u8, s2: [*c]const u8) c_int;
-pub extern "c" fn strncmp(s1: [*c]const u8, s2: [*c]const u8, n: usize) c_int;
-pub extern "c" fn strcasecmp(s1: [*c]const u8, s2: [*c]const u8) c_int;
-pub extern "c" fn strchr(s: [*c]const u8, c: c_int) [*c]u8;
-pub extern "c" fn strrchr(s: [*c]const u8, c: c_int) [*c]u8;
-pub extern "c" fn strstr(haystack: [*c]const u8, needle: [*c]const u8) [*c]u8;
-pub extern "c" fn strcpy(noalias dest: [*c]u8, noalias src: [*c]const u8) [*c]u8;
-pub extern "c" fn strtok(noalias str: [*c]u8, noalias delim: [*c]const u8) [*c]u8;
 pub extern "c" fn strcoll(s1: [*c]const u8, s2: [*c]const u8) c_int;
-pub extern "c" fn strtoul(noalias nptr: [*c]const u8, noalias endptr: ?*[*c]u8, base: c_int) c_ulong;
 
 pub extern "c" fn sprintf(noalias s: [*c]u8, noalias format: [*c]const u8, ...) c_int;
 pub extern "c" fn snprintf(noalias s: [*c]u8, maxlen: usize, noalias format: [*c]const u8, ...) c_int;

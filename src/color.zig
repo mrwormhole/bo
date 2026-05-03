@@ -289,16 +289,18 @@ fn split(str: [*c]u8, delim: [*c]const u8, nwrds: *usize) [*c][*c]u8 {
     var w: [*c][*c]u8 = @as([*c][*c]u8, @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * n))));
 
     nwrds.* = 0;
-    w[0] = c.strtok(str, delim);
-
-    while (w[nwrds.*] != null) {
+    var it = std.mem.splitAny(u8, std.mem.span(str), std.mem.span(delim));
+    while (it.next()) |token| {
         if (nwrds.* == (n - 2)) {
             n += 256;
             w = @as([*c][*c]u8, @ptrCast(@alignCast(util.xrealloc(@as(?*anyopaque, @ptrCast(w)), @sizeOf([*c]u8) * n))));
         }
+        const tok_ptr: [*c]u8 = @constCast(token.ptr);
+        tok_ptr[token.len] = 0;
+        w[nwrds.*] = tok_ptr;
         nwrds.* += 1;
-        w[nwrds.*] = c.strtok(null, delim);
     }
+    w[nwrds.*] = null;
 
     return w;
 }

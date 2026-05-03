@@ -1060,7 +1060,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 return error.InvalidArgument;
                             }
                         }
-                        Level = @intCast(c.strtoul(sLevel, null, 0));
+                        Level = std.fmt.parseInt(isize, std.mem.span(sLevel), 10) catch 0;
                         Level -= 1;
                         if (Level < 0) {
                             _ = c.fprintf(c.Stderr(), "tree: Invalid level, must be greater than 0.\n");
