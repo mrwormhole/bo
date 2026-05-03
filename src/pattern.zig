@@ -15,7 +15,7 @@ pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
     const p: *types.Pattern = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Pattern))));
     const offset: usize = if (pattern[0] == std.fs.path.sep) 1 else 0;
     p.pattern = util.copy(pattern + offset);
-    const sl = c.strIndexOfScalar(pattern, std.fs.path.sep);
+    const sl = std.mem.findScalar(u8, c.strSpan(pattern), std.fs.path.sep);
     p.relative = @intFromBool(sl == null or pattern[sl.? + 1] == 0);
     p.next = null;
     return p;
@@ -34,7 +34,7 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
     var buf = buf_in;
     var pat = pat_in;
 
-    const bar: [*c]u8 = if (c.strIndexOfScalar(pat, '|')) |idx| pat + idx else null;
+    const bar: [*c]u8 = if (std.mem.findScalar(u8, c.strSpan(pat), '|')) |idx| pat + idx else null;
 
     if (bar != null) {
         if (bar == pat or bar[1] == 0) return -1;
@@ -76,7 +76,9 @@ pub fn match(buf_in: [*c]const u8, pat_in: [*c]u8, isdir: bool, ignore_case: boo
             },
             '*' => {
                 pat += 1;
-                if (pat[0] == 0) return @intFromBool(c.strIndexOfScalar(buf, std.fs.path.sep) == null);
+                if (pat[0] == 0) {
+                    return @intFromBool(std.mem.findScalar(u8, c.strSpan(buf), std.fs.path.sep) == null);
+                }
                 m = 0;
                 if (pat[0] == '*') {
                     pat += 1;
@@ -137,10 +139,10 @@ pub fn ignore(name: [*c]const u8, ipatterns: []const [*c]u8, isdir: bool, checkp
     for (ipatterns) |p| {
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
-            var pc: [*c]const u8 = if (c.strIndexOfScalar(name, path_sep)) |idx| name + idx else null;
+            var pc: [*c]const u8 = if (std.mem.findScalar(u8, c.strSpan(name), path_sep)) |idx| name + idx else null;
             while (pc != null and pc[0] != 0) {
                 if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = if (c.strIndexOfScalar(pc + 1, path_sep)) |idx| pc + 1 + idx else null;
+                pc = if (std.mem.findScalar(u8, c.strSpan(pc + 1), path_sep)) |idx| pc + 1 + idx else null;
             }
         }
     }
@@ -152,10 +154,10 @@ pub fn include(name: [*c]const u8, patterns: []const [*c]u8, isdir: bool, checkp
     for (patterns) |p| {
         if (match(name, p, isdir, ignore_case) != 0) return 1;
         if (checkpaths) {
-            var pc: [*c]const u8 = if (c.strIndexOfScalar(name, path_sep)) |idx| name + idx else null;
+            var pc: [*c]const u8 = if (std.mem.findScalar(u8, c.strSpan(name), path_sep)) |idx| name + idx else null;
             while (pc != null and pc[0] != 0) {
                 if (match(pc + 1, p, isdir, ignore_case) != 0) return 1;
-                pc = if (c.strIndexOfScalar(pc + 1, path_sep)) |idx| pc + 1 + idx else null;
+                pc = if (std.mem.findScalar(u8, c.strSpan(pc + 1), path_sep)) |idx| pc + 1 + idx else null;
             }
         }
     }

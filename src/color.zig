@@ -333,7 +333,9 @@ fn cmd(s: [*c]u8) c_int {
     if (s[0] == '*') return DOT_EXTENSION;
 
     for (cmds) |cmd_entry| {
-        if (c.strEql(cmd_entry.cmd, s)) return @as(c_int, cmd_entry.cmdnum);
+        if (std.mem.eql(u8, c.strSpan(cmd_entry.cmd), c.strSpan(s))) {
+            return @as(c_int, cmd_entry.cmdnum);
+        }
     }
     return ERROR;
 }
@@ -402,7 +404,7 @@ pub fn parse_dir_colors() void {
                 }
             },
             COL_LINK => {
-                if (c_ptr[1] != null and c.strEqlIgnoreCaseLit(c_ptr[1], "target")) {
+                if (c_ptr[1] != null and std.ascii.eqlIgnoreCase(c.strSpan(c_ptr[1]), "target")) {
                     flag.linktargetcolor = true;
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
@@ -551,7 +553,7 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
         while (e != null) : (e = e.?.nxt) {
             xl = c.strLen(e.?.ext);
             const name_ptr: [*c]const u8 = if (l > xl) name + (l - xl) else name;
-            if (c.strEql(name_ptr, e.?.ext)) {
+            if (std.mem.eql(u8, c.strSpan(name_ptr), c.strSpan(e.?.ext))) {
                 if (color_code[@as(usize, @intCast(COL_LEFTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (e.?.term_flg) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (color_code[@as(usize, @intCast(COL_RIGHTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
@@ -591,7 +593,7 @@ pub fn initlinedraw(help: bool) void {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                if (c.strEqlIgnoreCase(charset, cstable[i].name[j])) {
+                if (std.ascii.eqlIgnoreCase(c.strSpan(charset), c.strSpan(cstable[i].name[j]))) {
                     linedraw = &cstable[i];
                     return;
                 }

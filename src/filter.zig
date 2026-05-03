@@ -76,7 +76,7 @@ pub fn gitignore_search(io: std.Io, startpath: [*c]const u8, depth: c_int) ?*typ
         }
     } else {
         if (c.realpath(startpath, &path) == null) return null;
-        if (!c.strEqlLit(&path, "/") and depth < 2048) {
+        if (!std.mem.eql(u8, c.strSpan(&path), "/") and depth < 2048) {
             // Otherwise if we haven't reached /, then keep searching upward:
             _ = c.snprintf(&path, std.fs.max_path_bytes, "%.*s/..", @as(c_int, std.fs.max_path_bytes - 4), startpath);
             pign = gitignore_search(io, &path, depth + 1);

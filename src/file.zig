@@ -43,12 +43,12 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    if (c.strIndexOfScalar(file_pathsep, p.*[0]) != null) {
+    if (std.mem.findScalar(u8, c.strSpan(file_pathsep), p.*[0]) != null) {
         p.* += 1;
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    while (p.*[0] != 0 and c.strIndexOfScalar(file_pathsep, p.*[0]) == null) : (p.* += 1) {}
+    while (p.*[0] != 0 and std.mem.findScalar(u8, c.strSpan(file_pathsep), p.*[0]) == null) : (p.* += 1) {}
     if (p.*[0] != 0) {
         tok.* = @intFromEnum(Ftok.T_DIR);
         nextpc_prev = p.*[0];
@@ -80,7 +80,9 @@ fn search(dir: *[*c]types.Info, name: [*c]const u8) *types.Info {
     var prev: [*c]types.Info = dir.*;
     var ptr: [*c]types.Info = dir.*;
     while (ptr != null) : (ptr = ptr[0].next) {
-        if (c.strEql(ptr[0].name, name)) return @ptrCast(ptr);
+        if (std.mem.eql(u8, c.strSpan(ptr[0].name), c.strSpan(name))) {
+            return @ptrCast(ptr);
+        }
         prev = ptr;
     }
     const n = newent(name);
@@ -273,7 +275,7 @@ pub fn file_getfulltree(
     _ = dev;
     _ = err;
 
-    const use_stdin = c.strEqlLit(d, ".");
+    const use_stdin = std.mem.eql(u8, c.strSpan(d), ".");
     const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
@@ -301,7 +303,7 @@ pub fn file_getfulltree(
         var cwd_ptr: *[*c]types.Info = &root;
 
         const link: [*c]u8 = if (flag.fflinks) blk: {
-            const idx = c.strIndexOf(path, " -> ") orelse break :blk null;
+            const idx = std.mem.find(u8, c.strSpan(path), " -> ") orelse break :blk null;
             break :blk path + idx;
         } else null;
         if (link != null) link[0] = 0;
@@ -314,7 +316,7 @@ pub fn file_getfulltree(
             switch (ftok) {
                 .T_PATHSEP => {},
                 .T_FILE, .T_DIR => {
-                    if (c.strEqlLit(s, ".")) {
+                    if (std.mem.eql(u8, c.strSpan(s), ".")) {
                         if (ftok == .T_FILE) break;
                         continue;
                     }
@@ -358,7 +360,7 @@ pub fn tabedfile_getfulltree(
     _ = dev;
     _ = err;
 
-    const use_stdin = c.strEqlLit(d, ".");
+    const use_stdin = std.mem.eql(u8, c.strSpan(d), ".");
     const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
@@ -403,7 +405,7 @@ pub fn tabedfile_getfulltree(
         const spath: [*c]u8 = path + tabs;
 
         const link: [*c]u8 = if (flag.fflinks) blk: {
-            const idx = c.strIndexOf(spath, " -> ") orelse break :blk null;
+            const idx = std.mem.find(u8, c.strSpan(spath), " -> ") orelse break :blk null;
             break :blk spath + idx;
         } else null;
         if (link != null) link[0] = 0;

@@ -52,7 +52,7 @@ pub fn url_encode(w: *std.Io.Writer, s_in: [*c]u8) bool {
     var slash = false;
     while (s[0] != 0) : (s += 1) {
         const ch: u8 = s[0];
-        if (c.isalnum(@as(c_int, ch)) != 0 or c.strIndexOfScalar(unreserved, ch) != null) {
+        if (c.isalnum(@as(c_int, ch)) != 0 or std.mem.findScalar(u8, c.strSpan(unreserved), ch) != null) {
             w.writeByte(ch) catch {};
         } else {
             w.print("%{X:0>2}", .{ch}) catch {};
@@ -201,7 +201,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
                 const off: usize = if (len >= htmldirlen) htmldirlen else 0;
                 const url_start = if (flag.htmloffset) dirname + off else dirname;
                 _ = url_encode(&fw.interface, url_start);
-                if (!c.strEql(dirname, filename)) {
+                if (!std.mem.eql(u8, c.strSpan(dirname), c.strSpan(filename))) {
                     if (dirname[c.strLen(dirname) - 1] != '/') fw.interface.writeByte('/') catch {};
                     _ = url_encode(&fw.interface, filename);
                 }

@@ -609,8 +609,8 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
         if (ent == null) break;
         const dname: [*c]const u8 = @ptrCast(&ent.?.d_name);
-        if (c.strEqlLit(dname, "..") or c.strEqlLit(dname, ".")) continue;
-        if (flag.H and c.strEqlLit(dname, "00Tree.html")) continue;
+        if (std.mem.eql(u8, c.strSpan(dname), "..") or std.mem.eql(u8, c.strSpan(dname), ".")) continue;
+        if (flag.H and std.mem.eql(u8, c.strSpan(dname), "00Tree.html")) continue;
         if (!flag.a and dname[0] == '.') continue;
 
         const dlen = c.strLen(dir);
@@ -687,7 +687,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         }
     }
     // if the directory name matches, turn off pattern matching for contents
-    const last_name: [*c]const u8 = if (c.strLastIndexOfScalar(d, file_pathsep[0])) |idx| d + idx else null;
+    const last_name: [*c]const u8 = if (std.mem.findScalarLast(u8, c.strSpan(d), file_pathsep[0])) |idx| d + idx else null;
     if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
         tmp_pattern = pattern;
         pattern = 0;
@@ -742,7 +742,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                                 pathsize = dlen + llen + 1024;
                                 path = @ptrCast(util.xrealloc(path, pathsize));
                             }
-                            if (flag.f and c.strEqlLit(d, "/")) {
+                            if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
                                 _ = c.sprintf(path, "%s%s", d, entry.lnk);
                             } else {
                                 _ = c.sprintf(path, "%s/%s", d, entry.lnk);
@@ -759,7 +759,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                     path = @ptrCast(util.xrealloc(path, pathsize));
                 }
 
-                if (flag.f and c.strEqlLit(d, "/")) {
+                if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
                     _ = c.sprintf(path, "%s%s", d, entry.name);
                 } else {
                     _ = c.sprintf(path, "%s/%s", d, entry.name);
@@ -837,7 +837,9 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
                 j.* = c.strLen(argv[i]) - 1;
             } else {
                 _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s=\n", prefix);
-                if (c.strEqlLit(prefix, "--charset=")) initlinedraw(true);
+                if (std.mem.eql(u8, c.strSpan(prefix), "--charset=")) {
+                    initlinedraw(true);
+                }
                 return error.InvalidArgument;
             }
         } else if (argv[n.*] != null) {
@@ -846,7 +848,9 @@ fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u
             j.* = c.strLen(argv[i]) - 1;
         } else {
             _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s\n", prefix);
-            if (c.strEqlLit(prefix, "--charset")) initlinedraw(true);
+            if (std.mem.eql(u8, c.strSpan(prefix), "--charset")) {
+                initlinedraw(true);
+            }
             return error.InvalidArgument;
         }
     }
@@ -916,7 +920,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
         charset = @ptrCast(env_charset.ptr);
     } else {
         const codeset = c.nl_langinfo(c.CODESET);
-        if (c.strEqlLit(codeset, "UTF-8") or c.strEqlLit(codeset, "utf8")) {
+        if (std.mem.eql(u8, c.strSpan(codeset), "UTF-8") or std.mem.eql(u8, c.strSpan(codeset), "utf8")) {
             charset = "UTF-8";
         }
     }
@@ -1073,45 +1077,45 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     },
                     '-' => {
                         if (j == 1) {
-                            if (c.strEqlLit(argv[i], "--")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--")) {
                                 optf = false;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--help")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--help")) {
                                 help.print();
                                 return;
                             }
-                            if (c.strEqlLit(argv[i], "--version")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--version")) {
                                 j = c.strLen(argv[i]) - 1;
                                 showversion = true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--inodes")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--inodes")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.inode = if (opt_toggle) !flag.inode else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--device")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--device")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.dev = if (opt_toggle) !flag.dev else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--noreport")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--noreport")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.noreport = if (opt_toggle) !flag.noreport else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--nolinks")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--nolinks")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.nolinks = if (opt_toggle) !flag.nolinks else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--dirsfirst")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--dirsfirst")) {
                                 j = c.strLen(argv[i]) - 1;
                                 list.topsort = &dirsfirst;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--filesfirst")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--filesfirst")) {
                                 j = c.strLen(argv[i]) - 1;
                                 list.topsort = &filesfirst;
                                 break;
@@ -1126,20 +1130,20 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 charset = arg;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--si")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--si")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.si = if (opt_toggle) !flag.si else true;
                                 flag.s = flag.si;
                                 flag.h = flag.si;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--du")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--du")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.du = if (opt_toggle) !flag.du else true;
                                 flag.s = flag.du;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--prune")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--prune")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.prune = if (opt_toggle) !flag.prune else true;
                                 break;
@@ -1150,12 +1154,12 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 flag.D = true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--ignore-case")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--ignore-case")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.ignorecase = if (opt_toggle) !flag.ignorecase else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--matchdirs")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--matchdirs")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.matchdirs = if (opt_toggle) !flag.matchdirs else true;
                                 break;
@@ -1165,7 +1169,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 list.basesort = null;
                                 k = 0;
                                 while (sorts[k].name != null) : (k += 1) {
-                                    if (c.strEqlIgnoreCase(sorts[k].name, arg)) {
+                                    if (std.ascii.eqlIgnoreCase(c.strSpan(sorts[k].name), c.strSpan(arg))) {
                                         list.basesort = sorts[k].cmpfunc;
                                         break;
                                     }
@@ -1180,19 +1184,19 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 }
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--fromtabfile")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--fromtabfile")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.fromfile = true;
                                 list.getfulltree = &file_mod.tabedfile_getfulltree;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--fromfile")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--fromfile")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.fromfile = true;
                                 list.getfulltree = &file_mod.file_getfulltree;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--metafirst")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--metafirst")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.metafirst = if (opt_toggle) !flag.metafirst else true;
                                 break;
@@ -1207,12 +1211,12 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 }
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--gitignore")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--gitignore")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.gitignore = if (opt_toggle) !flag.gitignore else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--info")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--info")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.showinfo = if (opt_toggle) !flag.showinfo else true;
                                 break;
@@ -1237,19 +1241,19 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 Houtro = util.copy(arg);
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--fflinks")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--fflinks")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.fflinks = if (opt_toggle) !flag.fflinks else true;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--hyperlink")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--hyperlink")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.hyper = if (opt_toggle) !flag.hyper else true;
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--scheme");
                             if (arg != null) {
-                                if (c.strIndexOfScalar(arg, ':') == null) {
+                                if (std.mem.findScalar(u8, c.strSpan(arg), ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
                                     arg = util.copy(&xpattern);
                                 } else {
@@ -1261,15 +1265,15 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             if (arg != null) {
                                 // I don't believe that . by itself can be a valid hostname,
                                 // so it will do as a null authority.
-                                if (c.strEqlLit(arg, ".")) authority = util.copy("") else authority = util.copy(arg);
+                                if (std.mem.eql(u8, c.strSpan(arg), ".")) authority = util.copy("") else authority = util.copy(arg);
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--opt-toggle")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--opt-toggle")) {
                                 j = c.strLen(argv[i]) - 1;
                                 opt_toggle = !opt_toggle;
                                 break;
                             }
-                            if (c.strEqlLit(argv[i], "--condense")) {
+                            if (std.mem.eql(u8, c.strSpan(argv[i]), "--condense")) {
                                 j = c.strLen(argv[i]) - 1;
                                 flag.condense_singletons = if (opt_toggle) !flag.condense_singletons else true;
                                 break;
@@ -1289,13 +1293,13 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 break;
                             }
                             if (comptime builtin.os.tag == .linux) {
-                                if (c.strEqlLit(argv[i], "--acl")) {
+                                if (std.mem.eql(u8, c.strSpan(argv[i]), "--acl")) {
                                     j = c.strLen(argv[i]) - 1;
                                     flag.acl = if (opt_toggle) !flag.acl else true;
                                     if (flag.acl) flag.p = true;
                                     break;
                                 }
-                                if (c.strEqlLit(argv[i], "--selinux")) {
+                                if (std.mem.eql(u8, c.strSpan(argv[i]), "--selinux")) {
                                     j = c.strLen(argv[i]) - 1;
                                     flag.selinux = if (opt_toggle) !flag.selinux else true;
                                     break;

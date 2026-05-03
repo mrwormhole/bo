@@ -56,7 +56,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
             const path_span = std.mem.span(path);
             @memcpy(rpath[0..path_span.len], path_span);
             rpath[path_span.len] = 0;
-            while (fp == null and !c.strEqlLit(&rpath, "/")) {
+            while (fp == null and !std.mem.eql(u8, c.strSpan(&rpath), "/")) {
                 _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/..", @as(c_int, std.fs.max_path_bytes - 4), &rpath);
                 if (c.realpath(&buf, &rpath) == null) break;
                 _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/.info", @as(c_int, std.fs.max_path_bytes - 7), &rpath);

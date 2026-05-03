@@ -54,7 +54,7 @@ pub fn has_acl(path: [*c]const u8) bool {
     var i: usize = 0;
     while (i < @as(usize, @intCast(n))) {
         const len = c.strLen(key);
-        if (c.strEqlLit(key, "system.posix_acl_access")) return true;
+        if (std.mem.eql(u8, c.strSpan(key), "system.posix_acl_access")) return true;
         i += len + 1;
         key += len + 1;
     }
