@@ -52,7 +52,7 @@ pub fn url_encode(w: *std.Io.Writer, s_in: [*c]u8) bool {
     var slash = false;
     while (s[0] != 0) : (s += 1) {
         const ch: u8 = s[0];
-        if (c.isalnum(@as(c_int, ch)) != 0 or c.strchr(unreserved, @as(c_int, ch)) != null) {
+        if (c.isalnum(@as(c_int, ch)) != 0 or c.strIndexOfScalar(unreserved, ch) != null) {
             w.writeByte(ch) catch {};
         } else {
             w.print("%{X:0>2}", .{ch}) catch {};
@@ -197,19 +197,19 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
         if (!flag.nolinks) {
             fw.interface.print(" href=\"{s}", .{std.mem.span(host)}) catch {};
             if (dirname != null) {
-                const len = c.strlen(dirname);
+                const len = c.strLen(dirname);
                 const off: usize = if (len >= htmldirlen) htmldirlen else 0;
                 const url_start = if (flag.htmloffset) dirname + off else dirname;
                 _ = url_encode(&fw.interface, url_start);
-                if (c.strcmp(dirname, filename) != 0) {
-                    if (dirname[c.strlen(dirname) - 1] != '/') fw.interface.writeByte('/') catch {};
+                if (!c.strEql(dirname, filename)) {
+                    if (dirname[c.strLen(dirname) - 1] != '/') fw.interface.writeByte('/') catch {};
                     _ = url_encode(&fw.interface, filename);
                 }
                 const tree_suffix: []const u8 = if (descend > 1) "/00Tree.html" else "";
                 const slash_suffix: []const u8 = if (f.isdir and descend < 2) "/" else "";
                 fw.interface.print("{s}{s}\"", .{ tree_suffix, slash_suffix }) catch {};
             } else {
-                if (host[c.strlen(host) - 1] != '/') fw.interface.writeByte('/') catch {};
+                if (host[c.strLen(host) - 1] != '/') fw.interface.writeByte('/') catch {};
                 _ = url_encode(&fw.interface, filename);
                 const tree_suffix: []const u8 = if (descend > 1) "/00Tree.html" else "";
                 fw.interface.print("{s}\"", .{tree_suffix}) catch {};

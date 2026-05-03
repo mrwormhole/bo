@@ -53,8 +53,8 @@ pub fn has_acl(path: [*c]const u8) bool {
     var key: [*c]u8 = &buf;
     var i: usize = 0;
     while (i < @as(usize, @intCast(n))) {
-        const len = c.strlen(key);
-        if (c.strcmp(key, "system.posix_acl_access") == 0) return true;
+        const len = c.strLen(key);
+        if (c.strEqlLit(key, "system.posix_acl_access")) return true;
         i += len + 1;
         key += len + 1;
     }
@@ -67,5 +67,5 @@ pub fn selinux_context(path: [*c]const u8) [*c]u8 {
 
     const len: isize = xattr.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
     buf[@intCast(if (len < 0) 0 else len)] = 0;
-    return util.scopy(&buf);
+    return util.copy(&buf);
 }

@@ -53,8 +53,10 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
         fp = c.fopen(&buf, "r");
 
         if (fp == null and checkparents) {
-            _ = c.strcpy(&rpath, path);
-            while (fp == null and c.strcmp(&rpath, "/") != 0) {
+            const path_span = std.mem.span(path);
+            @memcpy(rpath[0..path_span.len], path_span);
+            rpath[path_span.len] = 0;
+            while (fp == null and !c.strEqlLit(&rpath, "/")) {
                 _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/..", @as(c_int, std.fs.max_path_bytes - 4), &rpath);
                 if (c.realpath(&buf, &rpath) == null) break;
                 _ = c.snprintf(&buf, std.fs.max_path_bytes, "%.*s/.info", @as(c_int, std.fs.max_path_bytes - 7), &rpath);
@@ -69,10 +71,10 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     while (c.fgets(&buf, std.fs.max_path_bytes, fp) != null) {
         if (buf[0] == '#') continue;
         util.gittrim(&buf);
-        if (c.strlen(&buf) < 1) continue;
+        if (c.strLen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
-            line[@intCast(lines)] = util.scopy(&buf[1]);
+            line[@intCast(lines)] = util.copy(&buf[1]);
             lines += 1;
         } else {
             if (lines != 0) {
@@ -122,7 +124,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
 
     const inf: *types.InfoFile = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.InfoFile))));
     inf.comments = chead;
-    inf.path = util.scopy(path);
+    inf.path = util.copy(path);
     inf.next = null;
 
     return inf;

@@ -43,12 +43,12 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    if (c.strchr(file_pathsep, p.*[0]) != null) {
+    if (c.strIndexOfScalar(file_pathsep, p.*[0]) != null) {
         p.* += 1;
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    while (p.*[0] != 0 and c.strchr(file_pathsep, p.*[0]) == null) : (p.* += 1) {}
+    while (p.*[0] != 0 and c.strIndexOfScalar(file_pathsep, p.*[0]) == null) : (p.* += 1) {}
     if (p.*[0] != 0) {
         tok.* = @intFromEnum(Ftok.T_DIR);
         nextpc_prev = p.*[0];
@@ -63,7 +63,7 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
 fn newent(name: [*c]const u8) *types.Info {
     const n: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(types.Info)], 0);
-    n.name = util.scopy(name);
+    n.name = util.copy(name);
     n.child = null;
     n.tchild = null;
     n.next = null;
@@ -80,7 +80,7 @@ fn search(dir: *[*c]types.Info, name: [*c]const u8) *types.Info {
     var prev: [*c]types.Info = dir.*;
     var ptr: [*c]types.Info = dir.*;
     while (ptr != null) : (ptr = ptr[0].next) {
-        if (c.strcmp(ptr[0].name, name) == 0) return @ptrCast(ptr);
+        if (c.strEql(ptr[0].name, name)) return @ptrCast(ptr);
         prev = ptr;
     }
     const n = newent(name);
@@ -120,12 +120,13 @@ fn fprune(
     const fpath: [*c]u8 = @ptrCast(@alignCast(util.xmalloc(MAXPATH)));
     defer std.c.free(fpath);
 
-    const path_len = c.strlen(path);
+    const path_len = c.strLen(path);
     if (path_len + 1 >= MAXPATH) {
         std.debug.print("tree: path exceeds maximum length ({d} bytes): {s}\n", .{ MAXPATH, path });
         return null;
     }
-    _ = c.strcpy(fpath, path);
+    @memcpy(fpath[0..path_len], std.mem.span(path));
+    fpath[path_len] = 0;
     var cur: [*c]u8 = fpath + path_len;
     cur[0] = '/';
     cur += 1;
@@ -137,7 +138,7 @@ fn fprune(
 
     var ent: [*c]types.Info = head;
     while (ent != null) {
-        const name_len = c.strlen(ent[0].name);
+        const name_len = c.strLen(ent[0].name);
         if (cur_offset + name_len >= MAXPATH) {
             std.debug.print("tree: path exceeds maximum length, skipping: {s}/{s}\n", .{ path, ent[0].name });
             const skipped = ent;
@@ -146,7 +147,8 @@ fn fprune(
             freefiletree(skipped);
             continue;
         }
-        _ = c.strcpy(cur, ent[0].name);
+        @memcpy(cur[0..name_len], std.mem.span(ent[0].name));
+        cur[name_len] = 0;
         if (ent[0].tchild != null) ent[0].isdir = true;
 
         var show = true;
@@ -188,7 +190,7 @@ fn fprune(
                 while (com.?.desc[i] != null) : (i += 1) {}
                 ent[0].comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (i + 1))));
                 var j: usize = 0;
-                while (j < i) : (j += 1) ent[0].comment[j] = util.scopy(com.?.desc[j]);
+                while (j < i) : (j += 1) ent[0].comment[j] = util.copy(com.?.desc[j]);
                 ent[0].comment[i] = null;
             }
         }
@@ -207,7 +209,7 @@ fn fprune(
                 var segs = [_][*c]const u8{ ent[0].name, child[0].?.name };
                 const name = util.pathconcat(@ptrCast(&segs), 2);
                 std.c.free(ent[0].name);
-                ent[0].name = util.scopy(name);
+                ent[0].name = util.copy(name);
                 ent[0].child = child[0].?.child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0].?.condensed;
                 free_dir(child);
@@ -271,7 +273,7 @@ pub fn file_getfulltree(
     _ = dev;
     _ = err;
 
-    const use_stdin = c.strcmp(d, ".") == 0;
+    const use_stdin = c.strEqlLit(d, ".");
     const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
@@ -286,9 +288,9 @@ pub fn file_getfulltree(
 
     while (c.fgets(path, MAXPATH, fp) != null) {
         if (file_comment != null and
-            c.strncmp(path, file_comment, c.strlen(file_comment)) == 0) continue;
+            std.mem.startsWith(u8, c.strSpan(path), c.strSpan(file_comment))) continue;
 
-        var l = c.strlen(path);
+        var l = c.strLen(path);
         while (l > 0 and (path[l - 1] == '\n' or path[l - 1] == '\r')) {
             l -= 1;
             path[l] = 0;
@@ -298,7 +300,10 @@ pub fn file_getfulltree(
         var spath: [*c]u8 = path;
         var cwd_ptr: *[*c]types.Info = &root;
 
-        const link: [*c]u8 = if (flag.fflinks) c.strstr(path, " -> ") else null;
+        const link: [*c]u8 = if (flag.fflinks) blk: {
+            const idx = c.strIndexOf(path, " -> ") orelse break :blk null;
+            break :blk path + idx;
+        } else null;
         if (link != null) link[0] = 0;
 
         var tok: c_int = 0;
@@ -309,7 +314,7 @@ pub fn file_getfulltree(
             switch (ftok) {
                 .T_PATHSEP => {},
                 .T_FILE, .T_DIR => {
-                    if (c.strcmp(s, ".") == 0) {
+                    if (c.strEqlLit(s, ".")) {
                         if (ftok == .T_FILE) break;
                         continue;
                     }
@@ -332,7 +337,7 @@ pub fn file_getfulltree(
         if (ent != null and link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.scopy(link + 4);
+            ent[0].lnk = util.copy(link + 4);
         }
     }
 
@@ -353,7 +358,7 @@ pub fn tabedfile_getfulltree(
     _ = dev;
     _ = err;
 
-    const use_stdin = c.strcmp(d, ".") == 0;
+    const use_stdin = c.strEqlLit(d, ".");
     const fp: ?*c.FILE = if (use_stdin) c.cStdin() else c.fopen(d, "r");
     size.* = 0;
 
@@ -376,9 +381,9 @@ pub fn tabedfile_getfulltree(
     while (c.fgets(path, MAXPATH, fp) != null) {
         line += 1;
         if (file_comment != null and
-            c.strncmp(path, file_comment, c.strlen(file_comment)) == 0) continue;
+            std.mem.startsWith(u8, c.strSpan(path), c.strSpan(file_comment))) continue;
 
-        var l = c.strlen(path);
+        var l = c.strLen(path);
         while (l > 0 and (path[l - 1] == '\n' or path[l - 1] == '\r')) {
             l -= 1;
             path[l] = 0;
@@ -397,7 +402,10 @@ pub fn tabedfile_getfulltree(
 
         const spath: [*c]u8 = path + tabs;
 
-        const link: [*c]u8 = if (flag.fflinks) c.strstr(spath, " -> ") else null;
+        const link: [*c]u8 = if (flag.fflinks) blk: {
+            const idx = c.strIndexOf(spath, " -> ") orelse break :blk null;
+            break :blk spath + idx;
+        } else null;
         if (link != null) link[0] = 0;
 
         if (tabs > 0 and (tabs - 1 > top or istack[tabs - 1] == null)) {
@@ -421,7 +429,7 @@ pub fn tabedfile_getfulltree(
         if (link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.scopy(link + 4);
+            ent[0].lnk = util.copy(link + 4);
         }
         top = tabs;
     }

@@ -186,3 +186,39 @@ pub fn Stderr() ?*FILE {
         else => __stderrp,
     };
 }
+
+pub fn strSpan(s: [*c]const u8) [:0]const u8 {
+    return std.mem.span(@as([*:0]const u8, @ptrCast(s)));
+}
+
+pub fn strLen(s: [*c]const u8) usize {
+    return strSpan(s).len;
+}
+
+pub fn strEql(a: [*c]const u8, b: [*c]const u8) bool {
+    return std.mem.eql(u8, strSpan(a), strSpan(b));
+}
+
+pub fn strEqlLit(s: [*c]const u8, lit: []const u8) bool {
+    return std.mem.eql(u8, strSpan(s), lit);
+}
+
+pub fn strEqlIgnoreCase(a: [*c]const u8, b: [*c]const u8) bool {
+    return std.ascii.eqlIgnoreCase(strSpan(a), strSpan(b));
+}
+
+pub fn strEqlIgnoreCaseLit(s: [*c]const u8, lit: []const u8) bool {
+    return std.ascii.eqlIgnoreCase(strSpan(s), lit);
+}
+
+pub fn strIndexOfScalar(s: [*c]const u8, needle: u8) ?usize {
+    return std.mem.indexOfScalar(u8, strSpan(s), needle);
+}
+
+pub fn strLastIndexOfScalar(s: [*c]const u8, needle: u8) ?usize {
+    return std.mem.lastIndexOfScalar(u8, strSpan(s), needle);
+}
+
+pub fn strIndexOf(s: [*c]const u8, needle: []const u8) ?usize {
+    return std.mem.indexOf(u8, strSpan(s), needle);
+}

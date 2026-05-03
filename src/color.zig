@@ -333,7 +333,7 @@ fn cmd(s: [*c]u8) c_int {
     if (s[0] == '*') return DOT_EXTENSION;
 
     for (cmds) |cmd_entry| {
-        if (c.strcmp(cmd_entry.cmd, s) == 0) return @as(c_int, cmd_entry.cmdnum);
+        if (c.strEql(cmd_entry.cmd, s)) return @as(c_int, cmd_entry.cmdnum);
     }
     return ERROR;
 }
@@ -363,7 +363,7 @@ pub fn parse_dir_colors() void {
     if (c.getenv("CLICOLOR_FORCE") != null and !flag.nocolor) flag.force_color = true;
     s = c.getenv("TREE_COLORS");
     if (s == null) s = c.getenv("LS_COLORS");
-    if ((s == null or c.strlen(s) == 0) and (flag.force_color or cc != 0)) {
+    if ((s == null or c.strLen(s) == 0) and (flag.force_color or cc != 0)) {
         s = ":no=00:rs=0:fi=00:di=01;34:ln=01;36:pi=40;33:so=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:ex=01;32:*.bat=01;32:*.BAT=01;32:*.btm=01;32:*.BTM=01;32:*.cmd=01;32:*.CMD=01;32:*.com=01;32:*.COM=01;32:*.dll=01;32:*.DLL=01;32:*.exe=01;32:*.EXE=01;32:*.arj=01;31:*.bz2=01;31:*.deb=01;31:*.gz=01;31:*.lzh=01;31:*.rpm=01;31:*.tar=01;31:*.taz=01;31:*.tb2=01;31:*.tbz2=01;31:*.tbz=01;31:*.tgz=01;31:*.tz2=01;31:*.z=01;31:*.Z=01;31:*.zip=01;31:*.ZIP=01;31:*.zoo=01;31:*.asf=01;35:*.ASF=01;35:*.avi=01;35:*.AVI=01;35:*.bmp=01;35:*.BMP=01;35:*.flac=01;35:*.FLAC=01;35:*.gif=01;35:*.GIF=01;35:*.jpg=01;35:*.JPG=01;35:*.jpeg=01;35:*.JPEG=01;35:*.m2a=01;35:*.M2a=01;35:*.m2v=01;35:*.M2V=01;35:*.mov=01;35:*.MOV=01;35:*.mp3=01;35:*.MP3=01;35:*.mpeg=01;35:*.MPEG=01;35:*.mpg=01;35:*.MPG=01;35:*.ogg=01;35:*.OGG=01;35:*.ppm=01;35:*.rm=01;35:*.RM=01;35:*.tga=01;35:*.TGA=01;35:*.tif=01;35:*.TIF=01;35:*.wav=01;35:*.WAV=01;35:*.wmv=01;35:*.WMV=01;35:*.xbm=01;35:*.xpm=01;35:";
     }
 
@@ -379,7 +379,7 @@ pub fn parse_dir_colors() void {
         color_code[@as(usize, @intCast(i))] = null;
     }
 
-    colors = util.scopy(s);
+    colors = util.copy(s);
 
     arg = split(colors, ":", &n);
 
@@ -394,24 +394,24 @@ pub fn parse_dir_colors() void {
                 if (c_ptr[1] != null) {
                     e = @as(?*types.Extensions, @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Extensions)))));
                     if (e) |e_val| {
-                        e_val.ext = util.scopy(c_ptr[0] + 1);
-                        e_val.term_flg = util.scopy(c_ptr[1]);
+                        e_val.ext = util.copy(c_ptr[0] + 1);
+                        e_val.term_flg = util.copy(c_ptr[1]);
                         e_val.nxt = ext;
                         ext = e_val;
                     }
                 }
             },
             COL_LINK => {
-                if (c_ptr[1] != null and c.strcasecmp("target", c_ptr[1]) == 0) {
+                if (c_ptr[1] != null and c.strEqlIgnoreCaseLit(c_ptr[1], "target")) {
                     flag.linktargetcolor = true;
                     color_code[@as(usize, @intCast(COL_LINK))] = @constCast("01;36"); // Should never actually be used
                 } else {
                     // Falls through (matches C default case below)
-                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
+                    if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.copy(c_ptr[1]);
                 }
             },
             else => {
-                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.scopy(c_ptr[1]);
+                if (c_ptr[1] != null) color_code[@as(usize, @intCast(col))] = util.copy(c_ptr[1]);
             },
         }
 
@@ -421,30 +421,30 @@ pub fn parse_dir_colors() void {
 
     // Make sure at least reset (not normal) is defined. We're going to assume ANSI/vt100 support:
     if (color_code[@as(usize, @intCast(COL_LEFTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_LEFTCODE))] = util.scopy("\x1B[");
+        color_code[@as(usize, @intCast(COL_LEFTCODE))] = util.copy("\x1B[");
     }
     if (color_code[@as(usize, @intCast(COL_RIGHTCODE))] == null) {
-        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = util.scopy("m");
+        color_code[@as(usize, @intCast(COL_RIGHTCODE))] = util.copy("m");
     }
     if (color_code[@as(usize, @intCast(COL_RESET))] == null) {
-        color_code[@as(usize, @intCast(COL_RESET))] = util.scopy("0");
+        color_code[@as(usize, @intCast(COL_RESET))] = util.copy("0");
     }
     if (color_code[@as(usize, @intCast(COL_BOLD))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_BOLD))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_BOLD))], "%s1%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ITALIC))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_ITALIC))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + rcode_len + 2))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ITALIC))], "%s3%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
     if (color_code[@as(usize, @intCast(COL_ENDCODE))] == null) {
-        const lcode_len = c.strlen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
-        const reset_len = c.strlen(color_code[@as(usize, @intCast(COL_RESET))]);
-        const rcode_len = c.strlen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
+        const lcode_len = c.strLen(color_code[@as(usize, @intCast(COL_LEFTCODE))]);
+        const reset_len = c.strLen(color_code[@as(usize, @intCast(COL_RESET))]);
+        const rcode_len = c.strLen(color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
         color_code[@as(usize, @intCast(COL_ENDCODE))] = @as([*c]u8, @ptrCast(@alignCast(util.xmalloc(lcode_len + reset_len + rcode_len + 1))));
         _ = c.sprintf(color_code[@as(usize, @intCast(COL_ENDCODE))], "%s%s%s", color_code[@as(usize, @intCast(COL_LEFTCODE))], color_code[@as(usize, @intCast(COL_RESET))], color_code[@as(usize, @intCast(COL_RIGHTCODE))]);
     }
@@ -547,11 +547,11 @@ pub fn colorize(w: *std.Io.Writer, mode: c.mode_t, name: [*c]const u8, orphan: b
         }
 
         // not a directory, link, special device, etc, so check for extension match
-        l = c.strlen(name);
+        l = c.strLen(name);
         while (e != null) : (e = e.?.nxt) {
-            xl = c.strlen(e.?.ext);
+            xl = c.strLen(e.?.ext);
             const name_ptr: [*c]const u8 = if (l > xl) name + (l - xl) else name;
-            if (c.strcmp(name_ptr, e.?.ext) == 0) {
+            if (c.strEql(name_ptr, e.?.ext)) {
                 if (color_code[@as(usize, @intCast(COL_LEFTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (e.?.term_flg) |p| w.writeAll(std.mem.span(p)) catch {};
                 if (color_code[@as(usize, @intCast(COL_RIGHTCODE))]) |p| w.writeAll(std.mem.span(p)) catch {};
@@ -591,7 +591,7 @@ pub fn initlinedraw(help: bool) void {
             if (cstable[i].name == null) break;
             var j: usize = 0;
             while (cstable[i].name[j] != null) : (j += 1) {
-                if (c.strcasecmp(charset, cstable[i].name[j]) == 0) {
+                if (c.strEqlIgnoreCase(charset, cstable[i].name[j])) {
                     linedraw = &cstable[i];
                     return;
                 }

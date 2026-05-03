@@ -518,7 +518,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
     @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
 
-    ent.name = util.scopy(name);
+    ent.name = util.copy(name);
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
@@ -556,12 +556,12 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
         }
         const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
         if (len < 0) {
-            ent.lnk = util.scopy("[Error reading symbolic link information]");
+            ent.lnk = util.copy("[Error reading symbolic link information]");
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = util.scopy(getinfo_lbuf);
+            ent.lnk = util.copy(getinfo_lbuf);
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -592,11 +592,11 @@ export fn free_dir(d: [*c]?*types.Info) void {
 
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path == null) {
-        read_dir_pathsize = c.strlen(dir) + std.fs.max_path_bytes;
+        read_dir_pathsize = c.strLen(dir) + std.fs.max_path_bytes;
         read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
     }
 
-    const es: bool = dir[c.strlen(dir) - 1] == '/';
+    const es: bool = dir[c.strLen(dir) - 1] == '/';
     n.* = -1;
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
@@ -609,12 +609,12 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
         if (ent == null) break;
         const dname: [*c]const u8 = @ptrCast(&ent.?.d_name);
-        if (c.strcmp("..", dname) == 0 or c.strcmp(".", dname) == 0) continue;
-        if (flag.H and c.strcmp(dname, "00Tree.html") == 0) continue;
+        if (c.strEqlLit(dname, "..") or c.strEqlLit(dname, ".")) continue;
+        if (flag.H and c.strEqlLit(dname, "00Tree.html")) continue;
         if (!flag.a and dname[0] == '.') continue;
 
-        const dlen = c.strlen(dir);
-        const elen = c.strlen(dname);
+        const dlen = c.strLen(dir);
+        const elen = c.strLen(dname);
         if (dlen + elen + 2 > read_dir_pathsize) {
             read_dir_pathsize = dlen + elen + std.fs.max_path_bytes;
             read_dir_path = @ptrCast(util.xrealloc(read_dir_path, read_dir_pathsize));
@@ -636,7 +636,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
                 inf.comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.scopy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.copy(com.?.desc[ci]);
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
@@ -687,8 +687,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         }
     }
     // if the directory name matches, turn off pattern matching for contents
-    const last_name: [*c]const u8 = c.strrchr(d, file_pathsep[0]);
-    if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name.? + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
+    const last_name: [*c]const u8 = if (c.strLastIndexOfScalar(d, file_pathsep[0])) |idx| d + idx else null;
+    if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
         tmp_pattern = pattern;
         pattern = 0;
     }
@@ -699,7 +699,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     dir_ptr = sav;
 
     if (dir_ptr == null and n != 0) {
-        err.* = util.scopy("error opening dir");
+        err.* = util.copy("error opening dir");
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
@@ -713,7 +713,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = util.scopy(path);
+        err.* = util.copy(path);
         free_dir(sav);
         c.free(path);
         if (tmp_pattern != 0) pattern = tmp_pattern;
@@ -730,19 +730,19 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (entry.lnk != null) {
                 if (flag.l) {
                     if (hash.findino(@intCast(entry.inode), @intCast(entry.dev))) {
-                        entry.err = util.scopy("recursive, not followed");
+                        entry.err = util.copy("recursive, not followed");
                     } else {
                         hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
                         if (entry.lnk[0] == '/') {
                             entry.child = unix_getfulltree(entry.lnk, lev + 1, dev, @ptrCast(&entry.size), &(entry.err));
                         } else {
-                            const dlen = c.strlen(d);
-                            const llen = c.strlen(entry.lnk);
+                            const dlen = c.strLen(d);
+                            const llen = c.strLen(entry.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
                                 path = @ptrCast(util.xrealloc(path, pathsize));
                             }
-                            if (flag.f and c.strcmp(d, "/") == 0) {
+                            if (flag.f and c.strEqlLit(d, "/")) {
                                 _ = c.sprintf(path, "%s%s", d, entry.lnk);
                             } else {
                                 _ = c.sprintf(path, "%s/%s", d, entry.lnk);
@@ -752,14 +752,14 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                     }
                 }
             } else {
-                const dlen = c.strlen(d);
-                const nlen = c.strlen(entry.name);
+                const dlen = c.strLen(d);
+                const nlen = c.strLen(entry.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
                     path = @ptrCast(util.xrealloc(path, pathsize));
                 }
 
-                if (flag.f and c.strcmp(d, "/") == 0) {
+                if (flag.f and c.strEqlLit(d, "/")) {
                     _ = c.sprintf(path, "%s%s", d, entry.name);
                 } else {
                     _ = c.sprintf(path, "%s/%s", d, entry.name);
@@ -774,7 +774,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
                         c.free(entry.name);
-                        entry.name = util.scopy(new_name);
+                        entry.name = util.copy(new_name);
                         entry.child = child[0].?.child;
                         entry.condensed = entry.condensed + 1 + child[0].?.condensed;
                         free_dir(child);
@@ -826,27 +826,27 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 // Time to switch to getopt()?
 fn longArg(argv: [*c][*c]u8, i: usize, j: *usize, n: *usize, prefix: [*c]const u8) RunError![*c]u8 {
     var ret: [*c]u8 = null;
-    const len: usize = c.strlen(prefix);
+    const len: usize = c.strLen(prefix);
 
-    if (c.strncmp(prefix, argv[i], len) == 0) {
+    if (std.mem.startsWith(u8, c.strSpan(argv[i]), c.strSpan(prefix))) {
         j.* = len;
         if (argv[i][j.*] == '=') {
             if (argv[i][j.* + 1] != 0) {
                 j.* += 1;
                 ret = argv[i] + j.*;
-                j.* = c.strlen(argv[i]) - 1;
+                j.* = c.strLen(argv[i]) - 1;
             } else {
                 _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s=\n", prefix);
-                if (c.strcmp(prefix, "--charset=") == 0) initlinedraw(true);
+                if (c.strEqlLit(prefix, "--charset=")) initlinedraw(true);
                 return error.InvalidArgument;
             }
         } else if (argv[n.*] != null) {
             ret = argv[n.*];
             n.* += 1;
-            j.* = c.strlen(argv[i]) - 1;
+            j.* = c.strLen(argv[i]) - 1;
         } else {
             _ = c.fprintf(c.Stderr(), "tree: Missing argument to %s\n", prefix);
-            if (c.strcmp(prefix, "--charset") == 0) initlinedraw(true);
+            if (c.strEqlLit(prefix, "--charset")) initlinedraw(true);
             return error.InvalidArgument;
         }
     }
@@ -916,7 +916,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
         charset = @ptrCast(env_charset.ptr);
     } else {
         const codeset = c.nl_langinfo(c.CODESET);
-        if (c.strcmp(codeset, "UTF-8") == 0 or c.strcmp(codeset, "utf8") == 0) {
+        if (c.strEqlLit(codeset, "UTF-8") or c.strEqlLit(codeset, "utf8")) {
             charset = "UTF-8";
         }
     }
@@ -1021,7 +1021,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                         }
                         host = argv[n];
                         n += 1;
-                        k = c.strlen(host) - 1;
+                        k = c.strLen(host) - 1;
                         if (host[0] == '-') {
                             flag.htmloffset = true;
                             host += 1;
@@ -1073,46 +1073,46 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                     },
                     '-' => {
                         if (j == 1) {
-                            if (c.strcmp("--", argv[i]) == 0) {
+                            if (c.strEqlLit(argv[i], "--")) {
                                 optf = false;
                                 break;
                             }
-                            if (c.strcmp("--help", argv[i]) == 0) {
+                            if (c.strEqlLit(argv[i], "--help")) {
                                 help.print();
                                 return;
                             }
-                            if (c.strcmp("--version", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--version")) {
+                                j = c.strLen(argv[i]) - 1;
                                 showversion = true;
                                 break;
                             }
-                            if (c.strcmp("--inodes", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--inodes")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.inode = if (opt_toggle) !flag.inode else true;
                                 break;
                             }
-                            if (c.strcmp("--device", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--device")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.dev = if (opt_toggle) !flag.dev else true;
                                 break;
                             }
-                            if (c.strcmp("--noreport", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--noreport")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.noreport = if (opt_toggle) !flag.noreport else true;
                                 break;
                             }
-                            if (c.strcmp("--nolinks", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--nolinks")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.nolinks = if (opt_toggle) !flag.nolinks else true;
                                 break;
                             }
-                            if (c.strcmp("--dirsfirst", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--dirsfirst")) {
+                                j = c.strLen(argv[i]) - 1;
                                 list.topsort = &dirsfirst;
                                 break;
                             }
-                            if (c.strcmp("--filesfirst", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--filesfirst")) {
+                                j = c.strLen(argv[i]) - 1;
                                 list.topsort = &filesfirst;
                                 break;
                             }
@@ -1126,37 +1126,37 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 charset = arg;
                                 break;
                             }
-                            if (c.strcmp("--si", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--si")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.si = if (opt_toggle) !flag.si else true;
                                 flag.s = flag.si;
                                 flag.h = flag.si;
                                 break;
                             }
-                            if (c.strcmp("--du", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--du")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.du = if (opt_toggle) !flag.du else true;
                                 flag.s = flag.du;
                                 break;
                             }
-                            if (c.strcmp("--prune", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--prune")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.prune = if (opt_toggle) !flag.prune else true;
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--timefmt");
                             if (arg != null) {
-                                timefmt = util.scopy(arg);
+                                timefmt = util.copy(arg);
                                 flag.D = true;
                                 break;
                             }
-                            if (c.strcmp("--ignore-case", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--ignore-case")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.ignorecase = if (opt_toggle) !flag.ignorecase else true;
                                 break;
                             }
-                            if (c.strcmp("--matchdirs", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--matchdirs")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.matchdirs = if (opt_toggle) !flag.matchdirs else true;
                                 break;
                             }
@@ -1165,7 +1165,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 list.basesort = null;
                                 k = 0;
                                 while (sorts[k].name != null) : (k += 1) {
-                                    if (c.strcasecmp(sorts[k].name, arg) == 0) {
+                                    if (c.strEqlIgnoreCase(sorts[k].name, arg)) {
                                         list.basesort = sorts[k].cmpfunc;
                                         break;
                                     }
@@ -1180,20 +1180,20 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 }
                                 break;
                             }
-                            if (c.strcmp("--fromtabfile", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--fromtabfile")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.fromfile = true;
                                 list.getfulltree = &file_mod.tabedfile_getfulltree;
                                 break;
                             }
-                            if (c.strcmp("--fromfile", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--fromfile")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.fromfile = true;
                                 list.getfulltree = &file_mod.file_getfulltree;
                                 break;
                             }
-                            if (c.strcmp("--metafirst", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--metafirst")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.metafirst = if (opt_toggle) !flag.metafirst else true;
                                 break;
                             }
@@ -1207,13 +1207,13 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 }
                                 break;
                             }
-                            if (c.strcmp("--gitignore", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--gitignore")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.gitignore = if (opt_toggle) !flag.gitignore else true;
                                 break;
                             }
-                            if (c.strcmp("--info", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--info")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.showinfo = if (opt_toggle) !flag.showinfo else true;
                                 break;
                             }
@@ -1229,31 +1229,31 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             }
                             arg = try longArg(argv, i, &j, &n, "--hintro");
                             if (arg != null) {
-                                Hintro = util.scopy(arg);
+                                Hintro = util.copy(arg);
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--houtro");
                             if (arg != null) {
-                                Houtro = util.scopy(arg);
+                                Houtro = util.copy(arg);
                                 break;
                             }
-                            if (c.strcmp("--fflinks", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--fflinks")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.fflinks = if (opt_toggle) !flag.fflinks else true;
                                 break;
                             }
-                            if (c.strcmp("--hyperlink", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--hyperlink")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.hyper = if (opt_toggle) !flag.hyper else true;
                                 break;
                             }
                             arg = try longArg(argv, i, &j, &n, "--scheme");
                             if (arg != null) {
-                                if (c.strchr(arg, ':') == null) {
+                                if (c.strIndexOfScalar(arg, ':') == null) {
                                     _ = c.sprintf(&xpattern, "%s://", arg);
-                                    arg = util.scopy(&xpattern);
+                                    arg = util.copy(&xpattern);
                                 } else {
-                                    scheme = util.scopy(arg);
+                                    scheme = util.copy(arg);
                                 }
                                 break;
                             }
@@ -1261,16 +1261,16 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                             if (arg != null) {
                                 // I don't believe that . by itself can be a valid hostname,
                                 // so it will do as a null authority.
-                                if (c.strcmp(arg, ".") == 0) authority = util.scopy("") else authority = util.scopy(arg);
+                                if (c.strEqlLit(arg, ".")) authority = util.copy("") else authority = util.copy(arg);
                                 break;
                             }
-                            if (c.strcmp("--opt-toggle", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--opt-toggle")) {
+                                j = c.strLen(argv[i]) - 1;
                                 opt_toggle = !opt_toggle;
                                 break;
                             }
-                            if (c.strcmp("--condense", argv[i]) == 0) {
-                                j = c.strlen(argv[i]) - 1;
+                            if (c.strEqlLit(argv[i], "--condense")) {
+                                j = c.strLen(argv[i]) - 1;
                                 flag.condense_singletons = if (opt_toggle) !flag.condense_singletons else true;
                                 break;
                             }
@@ -1289,14 +1289,14 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                                 break;
                             }
                             if (comptime builtin.os.tag == .linux) {
-                                if (c.strcmp("--acl", argv[i]) == 0) {
-                                    j = c.strlen(argv[i]) - 1;
+                                if (c.strEqlLit(argv[i], "--acl")) {
+                                    j = c.strLen(argv[i]) - 1;
                                     flag.acl = if (opt_toggle) !flag.acl else true;
                                     if (flag.acl) flag.p = true;
                                     break;
                                 }
-                                if (c.strcmp("--selinux", argv[i]) == 0) {
-                                    j = c.strlen(argv[i]) - 1;
+                                if (c.strEqlLit(argv[i], "--selinux")) {
+                                    j = c.strLen(argv[i]) - 1;
                                     flag.selinux = if (opt_toggle) !flag.selinux else true;
                                     break;
                                 }
@@ -1324,7 +1324,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
                 dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
                 q += c.MINC;
             }
-            dirname[p] = util.scopy(argv[i]);
+            dirname[p] = util.copy(argv[i]);
             p += 1;
         }
     }
@@ -1356,7 +1356,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     if (dirname == null) {
         dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * 2)));
-        dirname[0] = util.scopy(".");
+        dirname[0] = util.copy(".");
         dirname[1] = null;
     }
     if (list.topsort == null) list.topsort = list.basesort;
@@ -1372,7 +1372,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
             _ = c.fprintf(c.Stderr(), "Unable to get hostname, using 'localhost'.\n");
             authority = @constCast("localhost");
         } else {
-            authority = util.scopy(&xpattern);
+            authority = util.copy(&xpattern);
         }
     }
 

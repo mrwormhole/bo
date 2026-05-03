@@ -116,18 +116,18 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
                 realbasepath[0] = 0;
                 dirpathoffset = 0;
             } else {
-                dirpathoffset = c.strlen(dirname[i]);
+                dirpathoffset = c.strLen(dirname[i]);
             }
         }
 
         if (flag.f) {
-            var j: usize = c.strlen(dirname[i]);
+            var j: usize = c.strLen(dirname[i]);
             while (j > 1 and dirname[i][j - 1] == '/') {
                 j -= 1;
                 dirname[i][j] = 0;
             }
         }
-        if (flag.H) htmldirlen = c.strlen(dirname[i]);
+        if (flag.H) htmldirlen = c.strLen(dirname[i]);
 
         var st_dev: c.dev_t = 0;
         info = doLstat(dirname[i], &st_dev);
@@ -205,7 +205,7 @@ pub fn listdir(
     var namemax: usize = 257;
     var htmldescend: c_int = 0;
     var n: isize = undefined;
-    const dirname_len: usize = c.strlen(dirname);
+    const dirname_len: usize = c.strLen(dirname);
     const dirlen: usize = dirname_len + 2;
     var pathlen: usize = dirlen + 257;
     var err: [*c]u8 = null;
@@ -229,7 +229,7 @@ pub fn listdir(
     while (cursor[0]) |entry| : (cursor += 1) {
         _ = lc.printinfo.?(dirname, entry, lev);
 
-        const namelen: usize = c.strlen(entry.name) + 1;
+        const namelen: usize = c.strLen(entry.name) + 1;
         if (namemax < namelen) {
             namemax = namelen;
             pathlen = dirlen + namemax;
@@ -286,7 +286,7 @@ pub fn listdir(
                     if (flag.R) {
                         const outsave = util.file;
                         var paths = [_][*c]u8{ newpath, null };
-                        const output: [*c]u8 = @ptrCast(util.xmalloc(c.strlen(newpath) + 13));
+                        const output: [*c]u8 = @ptrCast(util.xmalloc(c.strLen(newpath) + 13));
                         const dirsave: [*c]c_int = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
 
                         const copy_bytes: usize = @sizeOf(c_int) * @as(usize, @intCast(lev + 1));

@@ -98,10 +98,12 @@ pub fn xrealloc(ptr: ?*anyopaque, size: usize) *anyopaque {
     };
 }
 
-pub fn scopy(s: [*c]const u8) [*c]u8 {
-    const len = c.strlen(s);
-    const dst: [*c]u8 = @ptrCast(xmalloc(len + 1));
-    return c.strcpy(dst, s);
+pub fn copy(s: [*c]const u8) [*c]u8 {
+    const span = std.mem.span(s);
+    const dst: [*c]u8 = @ptrCast(xmalloc(span.len + 1));
+    @memcpy(dst[0..span.len], span);
+    dst[span.len] = 0;
+    return dst;
 }
 
 pub var io: std.Io = undefined;
@@ -117,7 +119,7 @@ pub fn writer(buffer: []u8) std.Io.File.Writer {
 }
 
 pub fn gittrim(s: [*c]u8) void {
-    var e: isize = @as(isize, @intCast(c.strlen(s))) - 1;
+    var e: isize = @as(isize, @intCast(c.strLen(s))) - 1;
     if (e < 0) return;
     while (e > 0 and (s[@intCast(e)] == '\n' or s[@intCast(e)] == '\r')) e -= 1;
 
@@ -221,16 +223,16 @@ test "pathconcat dedups separator at segment junction" {
     try std.testing.expectEqualStrings("foo" ++ sep_str ++ "bar", std.mem.sliceTo(result, 0));
 }
 
-test "scopy duplicates a null-terminated string" {
+test "copy duplicates a null-terminated string" {
     const src: [*c]const u8 = "hello";
-    const dst = scopy(src);
+    const dst = copy(src);
     defer std.c.free(dst);
     try std.testing.expectEqualStrings("hello", std.mem.sliceTo(dst, 0));
     try std.testing.expect(@intFromPtr(dst) != @intFromPtr(src));
 }
 
-test "scopy handles empty string" {
-    const dst = scopy("");
+test "copy handles empty string" {
+    const dst = copy("");
     defer std.c.free(dst);
     try std.testing.expectEqualStrings("", std.mem.sliceTo(dst, 0));
 }
