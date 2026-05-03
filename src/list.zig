@@ -86,7 +86,7 @@ export fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void {
     // (optional) Hanging slashes are a real pain to deal with
     var slash = html.url_encode(w, &realbasepath);
     if (dirname[dirpathoffset] != 0) {
-        slash = slash or (dirname[dirpathoffset] == '/');
+        slash = slash or (dirname[dirpathoffset] == std.fs.path.sep);
         if (!slash) w.writeByte('/') catch {};
         if (!html.url_encode(w, dirname + dirpathoffset)) w.writeByte('/') catch {};
     } else if (!slash) {
@@ -122,7 +122,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
 
         if (flag.f) {
             var j: usize = c.strLen(dirname[i]);
-            while (j > 1 and dirname[i][j - 1] == '/') {
+            while (j > 1 and dirname[i][j - 1] == std.fs.path.sep) {
                 j -= 1;
                 dirname[i][j] = 0;
             }
@@ -210,7 +210,7 @@ pub fn listdir(
     var pathlen: usize = dirlen + 257;
     var err: [*c]u8 = null;
 
-    const es: bool = (dirname[dirname_len - 1] == '/');
+    const es: bool = (dirname[dirname_len - 1] == std.fs.path.sep);
 
     // Sanity check on dir, may or may not be necessary when using --fromfile:
     if (dir_in == null or dir_in[0] == null) return tot;

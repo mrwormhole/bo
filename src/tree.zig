@@ -596,7 +596,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
     }
 
-    const es: bool = dir[c.strLen(dir) - 1] == '/';
+    const es: bool = dir[c.strLen(dir) - 1] == std.fs.path.sep;
     n.* = -1;
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
@@ -733,7 +733,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         entry.err = util.copy("recursive, not followed");
                     } else {
                         hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
-                        if (entry.lnk[0] == '/') {
+                        if (entry.lnk[0] == std.fs.path.sep) {
                             entry.child = unix_getfulltree(entry.lnk, lev + 1, dev, @ptrCast(&entry.size), &(entry.err));
                         } else {
                             const dlen = c.strLen(d);
