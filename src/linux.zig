@@ -5,6 +5,14 @@ const c = @import("cstd.zig");
 
 const util = @import("util.zig");
 
+pub const ENV_STDDATA_FD: [*:0]const u8 = "STDDATA_FD";
+pub const STDDATA_FILENO: c_int = 3;
+
+const xattr = if (builtin.os.tag == .linux) struct {
+    extern "c" fn listxattr(path: [*c]const u8, list: [*c]u8, size: usize) isize;
+    extern "c" fn getxattr(path: [*c]const u8, name: [*c]const u8, value: [*c]u8, size: usize) isize;
+} else 0;
+
 /// Calls statx(AT.FDCWD, path, flags, STATX.BASIC_STATS). Only meaningful on Linux;
 /// all call sites are already guarded by comptime os.tag checks.
 pub fn stat(path: [*:0]const u8, flags: u32, out: *std.os.linux.Statx) bool {
@@ -39,7 +47,7 @@ pub fn devId(st: *const std.os.linux.Statx) u64 {
 pub fn has_acl(path: [*c]const u8) bool {
     if (comptime builtin.os.tag != .linux) return false;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
-    const n: isize = c.listxattr(path, &buf, std.fs.max_path_bytes);
+    const n: isize = xattr.listxattr(path, &buf, std.fs.max_path_bytes);
     if (n <= 0) return false;
 
     var key: [*c]u8 = &buf;
@@ -57,7 +65,7 @@ pub fn selinux_context(path: [*c]const u8) [*c]u8 {
     if (comptime builtin.os.tag != .linux) return null;
     var buf: [std.fs.max_path_bytes]u8 = undefined;
 
-    const len: isize = c.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
+    const len: isize = xattr.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
     buf[@intCast(if (len < 0) 0 else len)] = 0;
     return util.scopy(&buf);
 }

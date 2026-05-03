@@ -187,6 +187,28 @@ export fn do_date(t: c.time_t) [*c]u8 {
 
 export var mb_cur_max: c_int = 0; // Max bytes in multibyte char
 
+fn isUnicodeControl(cp: u21) bool {
+    return switch (cp) {
+        0x00...0x1f, 0x7f...0x9f => true,
+        else => false,
+    };
+}
+
+fn printByteEscaped(w: *std.Io.Writer, ch: c_int) void {
+    if ((ch >= 7 and ch <= 13) or ch == '\\' or (ch == '"' and flag.Q) or (ch == ' ' and !flag.Q)) {
+        w.writeByte('\\') catch {};
+        if (ch > 13) w.writeByte(@intCast(ch)) catch {} else w.writeByte("abtnvfr"[@intCast(ch - 7)]) catch {};
+    } else if (c.isprint(ch) != 0) {
+        w.writeByte(@intCast(ch)) catch {};
+    } else {
+        if (flag.q) {
+            if (mb_cur_max > 1 and ch > 127) w.writeByte(@intCast(ch)) catch {} else w.writeByte('?') catch {};
+        } else {
+            w.print("\\{o:0>3}", .{@as(c_uint, @intCast(ch))}) catch {};
+        }
+    }
+}
+
 // Must fix this someday
 export fn printit(w: *std.Io.Writer, s: [*c]const u8) void {
     if (flag.N) {
@@ -194,54 +216,27 @@ export fn printit(w: *std.Io.Writer, s: [*c]const u8) void {
         return;
     }
     if (mb_cur_max > 1) {
-        const cs: usize = c.strlen(s) + 1;
-        const ws: [*c]c.wchar_t = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c.wchar_t) * cs)));
-        if (c.mbstowcs(ws, s, cs) != @as(usize, @bitCast(@as(isize, -1)))) {
+        const bytes = std.mem.span(s);
+        if (std.unicode.Utf8View.init(bytes) catch null) |view| {
             if (flag.Q) w.writeByte('"') catch {};
-            var remaining: usize = cs;
-            var tp: [*c]c.wchar_t = ws;
-            while (tp[0] != 0 and remaining > 1) : ({
-                tp += 1;
-                remaining -= 1;
-            }) {
-                if (c.iswprint(@intCast(tp[0])) != 0) {
-                    const wc: u32 = @bitCast(tp[0]);
-                    if (wc <= 0x10FFFF) {
-                        var utf8buf: [4]u8 = undefined;
-                        if (std.unicode.utf8Encode(@intCast(wc), &utf8buf)) |len| {
-                            w.writeAll(utf8buf[0..len]) catch {};
-                        } else |_| {
-                            w.writeByte('?') catch {};
-                        }
-                    } else {
-                        w.writeByte('?') catch {};
-                    }
+            var it = view.iterator();
+            while (it.nextCodepointSlice()) |cp_slice| {
+                const cp = std.unicode.utf8Decode(cp_slice) catch unreachable;
+                if (isUnicodeControl(cp)) {
+                    if (flag.q) w.writeByte('?') catch {} else w.print("\\{o:0>3}", .{@as(u32, cp)}) catch {};
                 } else {
-                    if (flag.q) w.writeByte('?') catch {} else w.print("\\{o:0>3}", .{@as(u32, @bitCast(tp[0]))}) catch {};
+                    w.writeAll(cp_slice) catch {};
                 }
             }
             if (flag.Q) w.writeByte('"') catch {};
-            c.free(ws);
             return;
         }
-        c.free(ws);
     }
     if (flag.Q) w.writeByte('"') catch {};
     var sp2: [*c]const u8 = s;
     while (sp2[0] != 0) : (sp2 += 1) {
         const ch: c_int = @intCast(sp2[0]);
-        if ((ch >= 7 and ch <= 13) or ch == '\\' or (ch == '"' and flag.Q) or (ch == ' ' and !flag.Q)) {
-            w.writeByte('\\') catch {};
-            if (ch > 13) w.writeByte(@intCast(ch)) catch {} else w.writeByte("abtnvfr"[@intCast(ch - 7)]) catch {};
-        } else if (c.isprint(ch) != 0) {
-            w.writeByte(@intCast(ch)) catch {};
-        } else {
-            if (flag.q) {
-                if (mb_cur_max > 1 and ch > 127) w.writeByte(@intCast(ch)) catch {} else w.writeByte('?') catch {};
-            } else {
-                w.print("\\{o:0>3}", .{@as(c_uint, @intCast(ch))}) catch {};
-            }
-        }
+        printByteEscaped(w, ch);
     }
     if (flag.Q) w.writeByte('"') catch {};
 }
@@ -933,11 +928,11 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     if (comptime builtin.os.tag == .linux) {
         // Output JSON automatically to "stddata" if present:
-        const stddata_fd_str = c.getenv(c.ENV_STDDATA_FD);
+        const stddata_fd_str = c.getenv(linux.ENV_STDDATA_FD);
         if (stddata_fd_str != null) {
             var std_fd: c_int = c.atoi(stddata_fd_str);
-            if (std_fd <= 0) std_fd = c.STDDATA_FILENO;
-            if (c.fcntl(std_fd, c.F_GETFD) >= 0) {
+            if (std_fd <= 0) std_fd = linux.STDDATA_FILENO;
+            if (c.fcntl(std_fd, std.posix.F.GETFD) >= 0) {
                 flag.J = true;
                 flag.noindent = true;
                 lc = json.ListingCalls();

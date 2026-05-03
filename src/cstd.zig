@@ -12,8 +12,6 @@ pub const time_t = std.c.time_t;
 pub const uid_t = std.c.uid_t;
 pub const gid_t = std.c.gid_t;
 pub const u_long = c_ulong;
-pub const wchar_t = std.c.wchar_t;
-pub const wint_t = std.c.wint_t;
 
 pub const struct_stat = std.c.Stat;
 
@@ -97,14 +95,11 @@ pub const CODESET: c_int = switch (builtin.os.tag) {
     else => 14,
 };
 
-pub const F_GETFD: c_int = 1;
 pub const EXIT_FAILURE: c_int = 1;
 
 pub const MINIT: usize = 30; // Initial dir entry allocation
 pub const MINC: usize = 20; // Allocation increment
 pub const INFO_PATH: [*:0]const u8 = "/usr/share/finfo/global_info";
-pub const STDDATA_FILENO: c_int = 3;
-pub const ENV_STDDATA_FD: [*:0]const u8 = "STDDATA_FD";
 
 const tm = opaque {};
 
@@ -158,16 +153,11 @@ pub extern "c" fn time(tloc: ?*time_t) time_t;
 pub extern "c" fn localtime(timer: *const time_t) ?*tm;
 pub extern "c" fn strftime(noalias s: [*c]u8, maxsize: usize, noalias format: [*c]const u8, noalias timeptr: ?*const tm) usize;
 
-pub extern "c" fn mbstowcs(noalias dest: [*c]wchar_t, noalias src: [*c]const u8, n: usize) usize;
-pub extern "c" fn iswprint(wc: wint_t) c_int;
 pub extern "c" fn isprint(c: c_int) c_int;
 pub extern "c" fn isalnum(c: c_int) c_int;
 pub extern "c" fn isdigit(c: c_int) c_int;
 pub extern "c" fn isspace(c: c_int) c_int;
 pub extern "c" fn tolower(c: c_int) c_int;
-
-pub extern "c" fn listxattr(path: [*c]const u8, list: [*c]u8, size: usize) isize;
-pub extern "c" fn getxattr(path: [*c]const u8, name: [*c]const u8, value: [*c]u8, size: usize) isize;
 
 extern "c" var stdin: ?*FILE;
 extern "c" var stdout: ?*FILE;
