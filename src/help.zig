@@ -60,13 +60,13 @@ pub fn print_all() void {
         "  \x08--ignore-case\r Ignore case when pattern matching.\n" ++
         "  \x08--matchdirs\r   Include directory names in \x08-P\r pattern matching.\n" ++
         "  \x08--metafirst\r   Print meta-data at the beginning of each line.\n" ++
-        "  \x08--prune\r       Prune empty directories from the util.\n" ++
+        "  \x08--prune\r       Prune empty directories from the output.\n" ++
         "  \x08--info\r        Print information about files found in \x08.info\r files.\n" ++
         "  \x08--infofile\r \x0cX\r  Explicitly read info file.\n" ++
         "  \x08--noreport\r    Turn off file/directory count at end of tree listing.\n" ++
-        "  \x08--charset\r \x0cX\r   Use charset \x0cX\r for terminal/HTML and indentation line util.\n" ++
+        "  \x08--charset\r \x0cX\r   Use charset \x0cX\r for terminal/HTML and indentation line output.\n" ++
         "  \x08--filelimit\r \x0c#\r Do not descend dirs with more than \x0c#\r files in them.\n" ++
-        "  \x08--condense\r    Condense directory singletons to a single line of util.\n" ++
+        "  \x08--condense\r    Condense directory singletons to a single line of output.\n" ++
         "  \x08-o\r \x0cfilename\r   Output to file instead of stdout.\n" ++
         "  \x08------- File options -------\r\n" ++
         "  \x08-q\r            Print non-printable characters as '\x08?\r'.\n" ++
@@ -111,7 +111,7 @@ pub fn print_all() void {
         "  \x08-J\r            Prints out an JSON representation of the tree.\n" ++
         "  \x08-H\r \x0cbaseHREF\r   Prints out HTML format with \x0cbaseHREF\r as top directory.\n" ++
         "  \x08-T\r \x0cstring\r     Replace the default HTML title and H1 header with \x0cstring\r.\n" ++
-        "  \x08--nolinks\r     Turn off hyperlinks in HTML util.\n" ++
+        "  \x08--nolinks\r     Turn off hyperlinks in HTML output.\n" ++
         "  \x08--hintro\r \x0cX\r    Use file \x0cX\r as the HTML intro.\n" ++
         "  \x08--houtro\r \x0cX\r    Use file \x0cX\r as the HTML outro.\n" ++
         "  \x08--hyperlink\r   Turn on OSC 8 terminal hyperlinks.\n" ++

@@ -11,6 +11,9 @@ fn lower(ch: u8, ignore_case: bool) u8 {
     return if (ignore_case) @intCast(c.tolower(ch)) else ch;
 }
 
+// TODO: should probably use std.fs.seperator instead of hardcoding '/' but this is easier for now
+// std.fs.path.sep_str is not a compile-time constant, so we can't use it in the pattern matching code without some refactoring
+// also types.Pattern needs to be in this file here.
 pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
     const p: *types.Pattern = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Pattern))));
     const offset: usize = if (pattern[0] == '/') 1 else 0;

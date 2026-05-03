@@ -18,7 +18,6 @@ const c = @cImport({
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 const util = @import("util.zig");
-const linux = @import("linux.zig");
 
 extern var linedraw: [*c]const types.LineDraw;
 extern var xpattern: [c.PATH_MAX]u8;
@@ -48,15 +47,9 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     var phead: ?*types.Pattern = null;
     var pend: ?*types.Pattern = null;
 
-    const is_regular = if (comptime builtin.os.tag == .linux) blk: {
-        var stat_result: std.os.linux.Statx = undefined;
-        break :blk linux.stat(@ptrCast(path), 0, &stat_result) and
-            (stat_result.mode & c.S_IFMT) == c.S_IFREG;
-    } else blk: {
-        const path_slice = std.mem.span(path);
-        const stat_result = std.Io.Dir.cwd().statFile(util.io, path_slice, .{}) catch null;
-        break :blk if (stat_result) |st| st.kind == .file else false;
-    };
+    const path_slice = std.mem.span(path);
+    const stat_result = std.Io.Dir.cwd().statFile(util.io, path_slice, .{}) catch null;
+    const is_regular = if (stat_result) |st| st.kind == .file else false;
     if (!is_regular) {
         _ = c.snprintf(&buf, c.PATH_MAX, "%s/.info", path);
         fp = c.fopen(&buf, "r");
