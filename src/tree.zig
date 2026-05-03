@@ -21,7 +21,6 @@ const hash = @import("hash.zig");
 const help = @import("help.zig");
 const linux = @import("linux.zig");
 const list = @import("list.zig");
-const constants = @import("constants.zig");
 
 // ---------------------------------------------------------------------------
 // Extern from color.zig
@@ -68,8 +67,6 @@ export var maxdirs: usize = 0;
 export var errors: c_int = 0;
 
 export var xpattern: [std.fs.max_path_bytes]u8 = std.mem.zeroes([std.fs.max_path_bytes]u8);
-
-export var mb_cur_max: c_int = 0;
 
 // ---------------------------------------------------------------------------
 // Platform-conditional ifmt / ftype
@@ -195,6 +192,8 @@ export fn do_date(t: c.time_t) [*c]u8 {
     }
     return &do_date_buf;
 }
+
+export var mb_cur_max: c_int = 0; // Max bytes in multibyte char
 
 // Must fix this someday
 export fn printit(w: *std.Io.Writer, s: [*c]const u8) void {
@@ -615,7 +614,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
 
-    var ne: usize = constants.MINIT;
+    var ne: usize = c.MINIT;
     var dl: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * ne)));
     var p: usize = 0;
 
@@ -654,8 +653,8 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + constants.MINC))));
-                ne += constants.MINC;
+                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + c.MINC))));
+                ne += c.MINC;
             }
             dl[p] = inf;
             p += 1;
@@ -942,10 +941,10 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     if (comptime builtin.os.tag == .linux) {
         // Output JSON automatically to "stddata" if present:
-        const stddata_fd_str = c.getenv(constants.ENV_STDDATA_FD);
+        const stddata_fd_str = c.getenv(c.ENV_STDDATA_FD);
         if (stddata_fd_str != null) {
             var std_fd: c_int = c.atoi(stddata_fd_str);
-            if (std_fd <= 0) std_fd = constants.STDDATA_FILENO;
+            if (std_fd <= 0) std_fd = c.STDDATA_FILENO;
             if (c.fcntl(std_fd, c.F_GETFD) >= 0) {
                 flag.J = true;
                 flag.noindent = true;
@@ -1332,11 +1331,11 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + constants.MINIT))));
-                q = constants.MINIT;
+                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
+                q = c.MINIT;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + constants.MINC))));
-                q += constants.MINC;
+                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
+                q += c.MINC;
             }
             dirname[p] = util.scopy(argv[i]);
             p += 1;
@@ -1391,7 +1390,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
     }
 
     if (flag.showinfo) {
-        info_mod.push_infostack(info_mod.new_infofile(constants.INFO_PATH, false));
+        info_mod.push_infostack(info_mod.new_infofile(c.INFO_PATH, false));
     }
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;

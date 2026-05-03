@@ -1,8 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const constants = @import("constants.zig");
-
 pub const FILE = std.c.FILE;
 pub const DIR = std.c.DIR;
 
@@ -102,11 +100,11 @@ pub const CODESET: c_int = switch (builtin.os.tag) {
 pub const F_GETFD: c_int = 1;
 pub const EXIT_FAILURE: c_int = 1;
 
-pub const MINIT = constants.MINIT;
-pub const MINC = constants.MINC;
-pub const INFO_PATH = constants.INFO_PATH;
-pub const STDDATA_FILENO = constants.STDDATA_FILENO;
-pub const ENV_STDDATA_FD = constants.ENV_STDDATA_FD;
+pub const MINIT: usize = 30; // Initial dir entry allocation
+pub const MINC: usize = 20; // Allocation increment
+pub const INFO_PATH: [*:0]const u8 = "/usr/share/finfo/global_info";
+pub const STDDATA_FILENO: c_int = 3;
+pub const ENV_STDDATA_FD: [*:0]const u8 = "STDDATA_FD";
 
 const tm = opaque {};
 
