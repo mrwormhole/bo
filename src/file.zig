@@ -13,8 +13,6 @@ const list = @import("list.zig");
 extern var flag: types.Flags;
 extern var pattern: c_int;
 extern var ipattern: c_int;
-extern var file_comment: [*c]u8;
-extern var file_pathsep: [*c]u8;
 extern var patterns: [*c][*c]u8;
 extern var ipatterns: [*c][*c]u8;
 
@@ -43,12 +41,12 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    if (std.mem.findScalar(u8, c.strSpan(file_pathsep), p.*[0]) != null) {
+    if (std.mem.findScalar(u8, std.fs.path.sep_str, p.*[0]) != null) {
         p.* += 1;
         tok.* = @intFromEnum(Ftok.T_PATHSEP);
         return null;
     }
-    while (p.*[0] != 0 and std.mem.findScalar(u8, c.strSpan(file_pathsep), p.*[0]) == null) : (p.* += 1) {}
+    while (p.*[0] != 0 and std.mem.findScalar(u8, std.fs.path.sep_str, p.*[0]) == null) : (p.* += 1) {}
     if (p.*[0] != 0) {
         tok.* = @intFromEnum(Ftok.T_DIR);
         nextpc_prev = p.*[0];
@@ -160,15 +158,15 @@ fn fprune(
         if (show and !matched) {
             if (!ent[0].isdir) {
                 if (pattern != 0 and
-                    pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and
-                    pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) == 0) show = false;
+                    pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, std.fs.path.sep) == 0 and
+                    pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, std.fs.path.sep) == 0) show = false;
                 if (ipattern != 0 and
-                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
-                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) show = false;
+                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, std.fs.path.sep) != 0 or
+                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, std.fs.path.sep) != 0)) show = false;
             } else {
                 if (pattern != 0 and
-                    (pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
-                        pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0))
+                    (pat.include(ent[0].name, patterns[0..@intCast(pattern)], ent[0].isdir, false, flag.ignorecase, std.fs.path.sep) != 0 or
+                        pat.include(fpath, patterns[0..@intCast(pattern)], ent[0].isdir, true, flag.ignorecase, std.fs.path.sep) != 0))
                 {
                     show = true;
                     matched = true;
@@ -176,8 +174,8 @@ fn fprune(
                     pattern = 0;
                 }
                 if (ipattern != 0 and
-                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or
-                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) show = false;
+                    (pat.ignore(ent[0].name, ipatterns[0..@intCast(ipattern)], ent[0].isdir, false, flag.ignorecase, std.fs.path.sep) != 0 or
+                        pat.ignore(fpath, ipatterns[0..@intCast(ipattern)], ent[0].isdir, true, flag.ignorecase, std.fs.path.sep) != 0)) show = false;
             }
         }
 
@@ -264,6 +262,8 @@ fn fprune(
     return dir;
 }
 
+const file_comment: []const u8 = "#";
+
 pub fn file_getfulltree(
     d: [*c]u8,
     lev: c_ulong,
@@ -289,8 +289,7 @@ pub fn file_getfulltree(
     defer std.c.free(path);
 
     while (c.fgets(path, MAXPATH, fp) != null) {
-        if (file_comment != null and
-            std.mem.startsWith(u8, c.strSpan(path), c.strSpan(file_comment))) continue;
+        if (std.mem.startsWith(u8, c.strSpan(path), file_comment)) continue;
 
         var l = c.strLen(path);
         while (l > 0 and (path[l - 1] == '\n' or path[l - 1] == '\r')) {
@@ -382,8 +381,7 @@ pub fn tabedfile_getfulltree(
 
     while (c.fgets(path, MAXPATH, fp) != null) {
         line += 1;
-        if (file_comment != null and
-            std.mem.startsWith(u8, c.strSpan(path), c.strSpan(file_comment))) continue;
+        if (std.mem.startsWith(u8, c.strSpan(path), file_comment)) continue;
 
         var l = c.strLen(path);
         while (l > 0 and (path[l - 1] == '\n' or path[l - 1] == '\r')) {

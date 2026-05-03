@@ -51,8 +51,7 @@ export var Hintro: [*c]const u8 = null;
 export var Houtro: [*c]const u8 = null;
 export var scheme: [*c]u8 = @constCast("file://");
 export var authority: [*c]u8 = null;
-export var file_comment: [*c]u8 = @constCast("#");
-export var file_pathsep: [*c]u8 = @constCast("/");
+
 export var timefmt: [*c]u8 = null;
 export var charset: [*c]const u8 = null;
 
@@ -508,9 +507,9 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (flag.gitignore and filter.filtercheck(path, name, @intFromBool(isdir), flag.ignorecase)) return null;
 
     if ((lst_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR) and !(flag.l and ((st_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFDIR)))) {
-        if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, file_pathsep[0]) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, file_pathsep[0]) == 0) return null;
+        if (pattern != 0 and pat.include(name, patterns[0..@intCast(pattern)], isdir, false, flag.ignorecase, std.fs.path.sep) == 0 and pat.include(path, patterns[0..@intCast(pattern)], isdir, true, flag.ignorecase, std.fs.path.sep) == 0) return null;
     }
-    if (ipattern != 0 and (pat.ignore(name, ipatterns[0..@intCast(ipattern)], isdir, false, flag.ignorecase, file_pathsep[0]) != 0 or pat.ignore(path, ipatterns[0..@intCast(ipattern)], isdir, true, flag.ignorecase, file_pathsep[0]) != 0)) return null;
+    if (ipattern != 0 and (pat.ignore(name, ipatterns[0..@intCast(ipattern)], isdir, false, flag.ignorecase, std.fs.path.sep) != 0 or pat.ignore(path, ipatterns[0..@intCast(ipattern)], isdir, true, flag.ignorecase, std.fs.path.sep) != 0)) return null;
 
     if (flag.d and ((st_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR))) return null;
 
@@ -687,8 +686,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         }
     }
     // if the directory name matches, turn off pattern matching for contents
-    const last_name: [*c]const u8 = if (std.mem.findScalarLast(u8, c.strSpan(d), file_pathsep[0])) |idx| d + idx else null;
-    if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, file_pathsep[0]) != 0 or (last_name != null and pat.include(last_name + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, file_pathsep[0]) != 0))) {
+    const last_name: [*c]const u8 = if (std.mem.findScalarLast(u8, c.strSpan(d), std.fs.path.sep)) |idx| d + idx else null;
+    if (pattern != 0 and (pat.include(d, patterns[0..@intCast(pattern)], true, true, flag.ignorecase, std.fs.path.sep) != 0 or (last_name != null and pat.include(last_name + 1, patterns[0..@intCast(pattern)], true, false, flag.ignorecase, std.fs.path.sep) != 0))) {
         tmp_pattern = pattern;
         pattern = 0;
     }
@@ -783,7 +782,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             }
             // prune empty folders, unless they match the requested pattern
             if (flag.prune and entry.child == null and
-                !(flag.matchdirs and pattern != 0 and pat.include(entry.name, patterns[0..@intCast(pattern)], entry.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
+                !(flag.matchdirs and pattern != 0 and pat.include(entry.name, patterns[0..@intCast(pattern)], entry.isdir, false, flag.ignorecase, std.fs.path.sep) != 0))
             {
                 const xp = entry;
                 var p: [*c]?*types.Info = dir_ptr;

@@ -108,6 +108,7 @@ pub extern "c" fn realloc(ptr: ?*anyopaque, size: usize) ?*anyopaque;
 pub extern "c" fn free(ptr: ?*anyopaque) void;
 pub extern "c" fn memcpy(noalias dest: ?*anyopaque, noalias src: ?*const anyopaque, n: usize) ?*anyopaque;
 
+// locale-aware string comparison (LC_COLLATE); no zig std equivalent, libc only
 pub extern "c" fn strcoll(s1: [*c]const u8, s2: [*c]const u8) c_int;
 
 pub extern "c" fn sprintf(noalias s: [*c]u8, noalias format: [*c]const u8, ...) c_int;
