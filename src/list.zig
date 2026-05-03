@@ -15,24 +15,36 @@ const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
 const linux = @import("linux.zig");
 
+pub const GetFullTreeFn = fn ([*c]u8, c_ulong, c.dev_t, *c.off_t, [*c][*c]u8) [*c][*c]types.Info;
+pub const SortFn = fn ([*c]types.Info, [*c]types.Info) c_int;
+
+pub var getfulltree: *const GetFullTreeFn = undefined;
+pub var basesort: ?*const SortFn = null;
+pub var topsort: ?*const SortFn = null;
+
+pub fn infoLessThan(cmp: *const SortFn, a: [*c]types.Info, b: [*c]types.Info) bool {
+    return cmp(a, b) < 0;
+}
+
 var lstat_info: types.Info = std.mem.zeroes(types.Info);
 
 fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
     lstat_info = std.mem.zeroes(types.Info);
     if (builtin.os.tag == .linux) {
-        var st: std.os.linux.Stat = undefined;
+        var st: std.os.linux.Statx = undefined;
         if (!linux.stat(@ptrCast(path), std.os.linux.AT.SYMLINK_NOFOLLOW, &st)) return null;
-        hash.saveino(@intCast(st.ino), @intCast(st.dev));
-        dev_out.* = @intCast(st.dev);
+        const dev = linux.devId(&st);
+        hash.saveino(@intCast(st.ino), @intCast(dev));
+        dev_out.* = @intCast(dev);
         lstat_info.linode = @intCast(st.ino);
-        lstat_info.ldev = @intCast(st.dev);
+        lstat_info.ldev = @intCast(dev);
         lstat_info.mode = @intCast(st.mode);
         lstat_info.uid = @intCast(st.uid);
         lstat_info.gid = @intCast(st.gid);
         lstat_info.size = @intCast(st.size);
-        lstat_info.atime = @intCast(st.atim.sec);
-        lstat_info.ctime = @intCast(st.ctim.sec);
-        lstat_info.mtime = @intCast(st.mtim.sec);
+        lstat_info.atime = @intCast(st.atime.sec);
+        lstat_info.ctime = @intCast(st.ctime.sec);
+        lstat_info.mtime = @intCast(st.mtime.sec);
     } else {
         var st: c.struct_stat = undefined;
         if (c.lstat(path, &st) < 0) return null;
@@ -67,16 +79,12 @@ fn doLstat(path: [*c]u8, dev_out: *c.dev_t) [*c]types.Info {
 }
 
 extern var flag: types.Flags;
-extern var getfulltree: *const fn ([*c]u8, c.u_long, c.dev_t, [*c]c.off_t, [*c][*c]u8) callconv(.c) [*c][*c]types.Info;
-extern var topsort: ?*const fn ([*c][*c]types.Info, [*c][*c]types.Info) callconv(.c) c_int;
 
-extern var outfile: *std.fs.File;
 extern var dirs: [*c]c_int;
 extern var errors: c_int;
 extern var Level: isize;
 extern var htmldirlen: usize;
 
-extern fn push_files(dir: [*c]const u8, ig: [*c]?*types.IgnoreFile, inf: [*c]?*types.InfoFile, top: bool) void;
 extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info;
 extern fn free_dir(d: [*c][*c]types.Info) void;
 
@@ -142,7 +150,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
                 dir = getfulltree(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
             } else {
-                push_files(dirname[i], &ig, &inf, true);
+                filter.pushFiles(dirname[i], &ig, &inf, true);
                 dir = read_dir(dirname[i], &n, @intFromBool(inf != null));
             }
         } else {
@@ -220,8 +228,7 @@ pub fn listdir(
     n = 0;
     while (dir_in[@as(usize, @intCast(n))] != null) : (n += 1) {}
     if (topsort != null) {
-        const cmp: ?*const fn (?*const anyopaque, ?*const anyopaque) callconv(.c) c_int = @ptrCast(topsort.?);
-        c.qsort(@ptrCast(dir_in), @as(usize, @intCast(n)), @sizeOf([*c]types.Info), cmp);
+        std.mem.sort([*c]types.Info, dir_in[0..@intCast(n)], topsort.?, infoLessThan);
     }
 
     var cursor = dir_in;
@@ -288,7 +295,7 @@ pub fn listdir(
 
                 if (Level >= 0 and lev > Level) {
                     if (flag.R) {
-                        const outsave = outfile.*;
+                        const outsave = util.file;
                         var paths = [_][*c]u8{ newpath, null };
                         const output: [*c]u8 = @ptrCast(util.xmalloc(c.strlen(newpath) + 13));
                         const dirsave: [*c]c_int = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
@@ -297,7 +304,7 @@ pub fn listdir(
                         _ = c.memcpy(dirsave, dirs, copy_bytes);
                         _ = c.sprintf(output, "%s/00Tree.html", newpath);
                         const output_name = std.mem.span(@as([*:0]const u8, @ptrCast(output)));
-                        outfile.* = std.fs.cwd().createFile(output_name, .{}) catch {
+                        util.file = std.Io.Dir.cwd().createFile(util.io, output_name, .{}) catch {
                             std.debug.print("tree: invalid filename '{s}'\n", .{output_name});
                             c.exit(c.EXIT_FAILURE);
                             unreachable;
@@ -305,8 +312,8 @@ pub fn listdir(
                         emit_tree(lc, &paths, hasfulltree);
 
                         c.free(output);
-                        outfile.close();
-                        outfile.* = outsave;
+                        util.file.close(util.io);
+                        util.file = outsave;
 
                         _ = c.memcpy(dirs, dirsave, copy_bytes);
                         c.free(dirsave);
@@ -322,7 +329,7 @@ pub fn listdir(
                         subdir = entry.*.child;
                         err = entry.*.err;
                     } else {
-                        push_files(newpath, &ig, &inf, false);
+                        filter.pushFiles(newpath, &ig, &inf, false);
                         subdir = read_dir(newpath, &n, @intFromBool(inf != null));
                         if (subdir == null and n != 0) {
                             err = @constCast("error opening dir");

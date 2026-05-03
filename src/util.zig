@@ -106,6 +106,41 @@ pub fn scopy(s: [*c]const u8) [*c]u8 {
     return c.strcpy(dst, s);
 }
 
+pub var io: std.Io = undefined;
+pub var file: std.Io.File = undefined;
+
+pub fn init(new_io: std.Io, new_file: std.Io.File) void {
+    io = new_io;
+    file = new_file;
+}
+
+pub fn writer(buffer: []u8) std.Io.File.Writer {
+    return file.writer(io, buffer);
+}
+
+pub fn gittrim(s: [*c]u8) void {
+    var e: isize = @as(isize, @intCast(c.strlen(s))) - 1;
+    if (e < 0) return;
+    while (e > 0 and (s[@intCast(e)] == '\n' or s[@intCast(e)] == '\r')) e -= 1;
+
+    var i: isize = e;
+    while (i >= 0) : (i -= 1) {
+        if (s[@intCast(i)] != ' ') break;
+        if (i != 0 and s[@intCast(i - 1)] != '\\') e -= 1;
+    }
+    s[@intCast(e + 1)] = 0;
+
+    var ri: usize = 0;
+    var re: usize = 0;
+    while (s[ri] != 0) {
+        if (s[ri] == '\\') ri += 1;
+        s[re] = s[ri];
+        re += 1;
+        ri += 1;
+    }
+    s[re] = 0;
+}
+
 test "pathnpcatSep basic copy" {
     var buf: [64]u8 = undefined;
     const limit: [*]u8 = buf[63..].ptr;

@@ -21,9 +21,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
-    exe.linkLibC();
+    exe.root_module.linkSystemLibrary("c", .{});
     // Add a dedicated include dir that only exposes tree.h to the C importer.
-    exe.addAfterIncludePath(b.path("."));
+    exe.root_module.addIncludePath(b.path("."));
     addPreprocessorDefines(exe, target);
 
     return exe;
@@ -50,6 +50,11 @@ fn addPreprocessorDefines(exe: *std.Build.Step.Compile, target: std.Build.Resolv
         .illumos => {
             exe.root_module.addCMacro("_XOPEN_SOURCE", "500");
             exe.root_module.addCMacro("_POSIX_C_SOURCE", "200112");
+        },
+        .freebsd => {
+            // Strict POSIX.1-2008 + XSI: hides BSD-only inline helpers
+            // (e.g. bintime_shift) that Zig's C translator currently rejects.
+            exe.root_module.addCMacro("_XOPEN_SOURCE", "700");
         },
         else => {},
     }
@@ -80,8 +85,8 @@ fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.b
             .optimize = optimize,
         }),
     });
-    tests.linkLibC();
-    tests.addIncludePath(b.path("."));
+    tests.root_module.linkSystemLibrary("c", .{});
+    tests.root_module.addIncludePath(b.path("."));
     addPreprocessorDefines(tests, target);
 
     const test_cmd = b.addRunArtifact(tests);

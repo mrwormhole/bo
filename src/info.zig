@@ -9,6 +9,7 @@
 //!     more info
 
 const std = @import("std");
+const builtin = @import("builtin");
 
 const c = @cImport({
     @cInclude("tree.h");
@@ -17,7 +18,6 @@ const c = @cImport({
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 const util = @import("util.zig");
-const filter = @import("filter.zig");
 
 extern var linedraw: [*c]const types.LineDraw;
 extern var xpattern: [c.PATH_MAX]u8;
@@ -48,7 +48,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
     var pend: ?*types.Pattern = null;
 
     const path_slice = std.mem.span(path);
-    const stat_result = std.fs.cwd().statFile(path_slice) catch null;
+    const stat_result = std.Io.Dir.cwd().statFile(util.io, path_slice, .{}) catch null;
     const is_regular = if (stat_result) |st| st.kind == .file else false;
     if (!is_regular) {
         _ = c.snprintf(&buf, c.PATH_MAX, "%s/.info", path);
@@ -70,7 +70,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
 
     while (c.fgets(&buf, c.PATH_MAX, fp) != null) {
         if (buf[0] == '#') continue;
-        filter.gittrim(&buf);
+        util.gittrim(&buf);
         if (c.strlen(&buf) < 1) continue;
 
         if (buf[0] == '\t') {
@@ -98,7 +98,7 @@ pub fn new_infofile(path: [*c]const u8, checkparents: bool) ?*types.InfoFile {
                 pend = null;
                 lines = 0;
             }
-            const p = filter.new_pattern(&buf);
+            const p = pat.new_pattern(&buf);
             if (phead == null) {
                 phead = p;
                 pend = p;

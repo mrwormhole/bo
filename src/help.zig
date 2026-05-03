@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const util = @import("util.zig");
 
 const parse_dir_colors = @import("color.zig").parse_dir_colors;
 const initlinedraw = @import("color.zig").initlinedraw;
@@ -9,7 +10,7 @@ pub fn print() void {
     parse_dir_colors();
     initlinedraw(false);
     var buf: [1024]u8 = undefined;
-    var fw = std.fs.File.stderr().writer(&buf);
+    var fw = std.Io.File.stderr().writer(util.io, &buf);
     defer fw.interface.flush() catch {};
 
     fancy(&fw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++
@@ -29,7 +30,7 @@ pub fn print_all() void {
     parse_dir_colors();
     initlinedraw(false);
     var buf: [4096]u8 = undefined;
-    var fw = std.fs.File.stdout().writer(&buf);
+    var fw = std.Io.File.stdout().writer(util.io, &buf);
     defer fw.interface.flush() catch {};
 
     fancy(&fw.interface, @constCast("usage: \x08tree\r [\x08-acdfghilnpqrstuvxACDFJQNSUX\r] [\x08-L\r \x0clevel\r [\x08-R\r]] [\x08-H\r [-]\x0cbaseHREF\r]\n" ++

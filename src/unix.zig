@@ -9,8 +9,9 @@ const c = @cImport({
 const types = @import("types.zig");
 const html = @import("html.zig");
 const info = @import("info.zig");
+const util = @import("util.zig");
+
 extern var flag: types.Flags;
-extern var outfile: *std.fs.File;
 extern var dirs: [*c]c_int;
 
 extern var scheme: [*c]u8;
@@ -35,7 +36,7 @@ pub fn printinfo(dirname: [*c]u8, file: ?*types.Info, level: c_int) c_int {
 
     _ = fillinfo(&info_buf, file);
     var buf: [1024]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     if (flag.metafirst) {
         if (info_buf[0] == '[') fw.interface.print("{s}  ", .{std.mem.sliceTo(&info_buf, 0)}) catch {};
@@ -64,7 +65,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
     _ = descend;
 
     var buf: [4096]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     var colored: bool = false;
 
@@ -109,7 +110,7 @@ pub fn printfile(dirname: [*c]u8, filename: [*c]u8, file: ?*types.Info, descend:
 
 pub fn printerror(err: [*c]u8) c_int {
     var buf: [512]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
     fw.interface.print("  [{s}]", .{std.mem.span(err)}) catch {};
     return 0;
@@ -119,7 +120,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
     _ = needcomma;
 
     var buf: [4096]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     if (postdir <= 0) fw.interface.writeByte('\n') catch {};
@@ -149,7 +150,7 @@ pub fn newline(file: ?*types.Info, level: c_int, postdir: c_int, needcomma: c_in
 pub fn report(tot: types.Totals) void {
     var pbuf: [256]u8 = undefined;
     var buf: [512]u8 = undefined;
-    var fw = outfile.writer(&buf);
+    var fw = util.writer(&buf);
     defer fw.interface.flush() catch {};
 
     fw.interface.writeByte('\n') catch {};
