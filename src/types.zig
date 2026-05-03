@@ -81,7 +81,7 @@ const InfoLinux = extern struct {
     tag: [*c]const u8,
     condensed: usize,
     comment: [*c][*c]u8,
-    child: [*c][*c]InfoLinux,
+    child: [*c]?*InfoLinux,
     next: ?*InfoLinux,
     tchild: ?*InfoLinux,
 };
@@ -110,7 +110,7 @@ const InfoOther = extern struct {
     tag: [*c]const u8,
     condensed: usize,
     comment: [*c][*c]u8,
-    child: [*c][*c]InfoOther,
+    child: [*c]?*InfoOther,
     next: ?*InfoOther,
     tchild: ?*InfoOther,
 };

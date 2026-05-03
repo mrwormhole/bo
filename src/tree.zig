@@ -362,16 +362,16 @@ export fn indent(w: *std.Io.Writer, maxlevel: c_int) void {
 // ---------------------------------------------------------------------------
 
 // filesfirst and dirsfirst are now top-level meta-sorts.
-fn filesfirst(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    if (a[0].isdir != b[0].isdir) {
-        return if (a[0].isdir) 1 else -1;
+fn filesfirst(a: *types.Info, b: *types.Info) c_int {
+    if (a.isdir != b.isdir) {
+        return if (a.isdir) 1 else -1;
     }
     return list.basesort.?(a, b);
 }
 
-fn dirsfirst(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    if (a[0].isdir != b[0].isdir) {
-        return if (a[0].isdir) -1 else 1;
+fn dirsfirst(a: *types.Info, b: *types.Info) c_int {
+    if (a.isdir != b.isdir) {
+        return if (a.isdir) -1 else 1;
     }
     return list.basesort.?(a, b);
 }
@@ -402,31 +402,31 @@ fn namecoll(a: [*c]u8, b: [*c]u8) c_int {
     return c.strcoll(a, b);
 }
 
-fn alnumsort(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    const v = namecoll(a[0].name, b[0].name);
+fn alnumsort(a: *types.Info, b: *types.Info) c_int {
+    const v = namecoll(a.name, b.name);
     return if (flag.reverse) -v else v;
 }
 
-fn versort(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    const v = strverscmp(a[0].name, b[0].name);
+fn versort(a: *types.Info, b: *types.Info) c_int {
+    const v = strverscmp(a.name, b.name);
     return if (flag.reverse) -v else v;
 }
 
-fn mtimesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    if (a[0].mtime == b[0].mtime) {
-        const v = namecoll(a[0].name, b[0].name);
+fn mtimesort(a: *types.Info, b: *types.Info) c_int {
+    if (a.mtime == b.mtime) {
+        const v = namecoll(a.name, b.name);
         return if (flag.reverse) -v else v;
     }
-    const v: c_int = if (a[0].mtime < b[0].mtime) -1 else 1;
+    const v: c_int = if (a.mtime < b.mtime) -1 else 1;
     return if (flag.reverse) -v else v;
 }
 
-fn ctimesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    if (a[0].ctime == b[0].ctime) {
-        const v = namecoll(a[0].name, b[0].name);
+fn ctimesort(a: *types.Info, b: *types.Info) c_int {
+    if (a.ctime == b.ctime) {
+        const v = namecoll(a.name, b.name);
         return if (flag.reverse) -v else v;
     }
-    const v: c_int = if (a[0].ctime < b[0].ctime) -1 else 1;
+    const v: c_int = if (a.ctime < b.ctime) -1 else 1;
     return if (flag.reverse) -v else v;
 }
 
@@ -434,9 +434,9 @@ fn sizecmp(a: c.off_t, b: c.off_t) c_int {
     return if (a == b) 0 else if (a < b) 1 else -1;
 }
 
-fn fsizesort(a: [*c]types.Info, b: [*c]types.Info) c_int {
-    var v = sizecmp(@intCast(a[0].size), @intCast(b[0].size));
-    if (v == 0) v = namecoll(a[0].name, b[0].name);
+fn fsizesort(a: *types.Info, b: *types.Info) c_int {
+    var v = sizecmp(@intCast(a.size), @intCast(b.size));
+    if (v == 0) v = namecoll(a.name, b.name);
     return if (flag.reverse) -v else v;
 }
 
@@ -601,25 +601,25 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     return ent;
 }
 
-export fn free_dir(d: [*c][*c]types.Info) void {
+export fn free_dir(d: [*c]?*types.Info) void {
     var i: usize = 0;
-    while (d[i] != null) : (i += 1) {
-        c.free(d[i].*.name);
-        if (d[i].*.lnk != null) c.free(d[i].*.lnk);
+    while (d[i]) |entry| : (i += 1) {
+        c.free(entry.name);
+        if (entry.lnk != null) c.free(entry.lnk);
         if (comptime builtin.os.tag == .linux) {
-            if (d[i].*.secontext != null) c.free(d[i].*.secontext);
+            if (entry.secontext != null) c.free(entry.secontext);
         }
-        if (d[i].*.comment != null) {
+        if (entry.comment != null) {
             var j: usize = 0;
-            while (d[i].*.comment[j] != null) : (j += 1) c.free(d[i].*.comment[j]);
+            while (entry.comment[j] != null) : (j += 1) c.free(entry.comment[j]);
         }
-        if (d[i].*.err != null) c.free(d[i].*.err);
-        c.free(@ptrCast(d[i]));
+        if (entry.err != null) c.free(entry.err);
+        c.free(@ptrCast(entry));
     }
     c.free(@ptrCast(d));
 }
 
-export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info {
+export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path == null) {
         read_dir_pathsize = c.strlen(dir) + c.PATH_MAX;
         read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
@@ -631,7 +631,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
     if (d == null) return null;
 
     var ne: usize = c.MINIT;
-    var dl: [*c][*c]types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]types.Info) * ne)));
+    var dl: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * ne)));
     var p: usize = 0;
 
     while (true) {
@@ -669,7 +669,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf([*c]types.Info) * (ne + c.MINC))));
+                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + c.MINC))));
                 ne += c.MINC;
             }
             dl[p] = inf;
@@ -691,14 +691,14 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c][*c]types.Info
 // This is for all the impossible things people wanted the old tree to do.
 // This can and will use a large amount of memory for large directory trees
 // and also take some time.
-fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c][*c]types.Info {
+fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c]?*types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
     var pathsize: usize = 0;
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
-    var sav: [*c][*c]types.Info = undefined;
-    var dir_ptr: [*c][*c]types.Info = undefined;
+    var sav: [*c]?*types.Info = undefined;
+    var dir_ptr: [*c]?*types.Info = undefined;
     var n: isize = undefined;
     var tmp_pattern: c_int = 0;
 
@@ -754,78 +754,77 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         maxdirs += 1024;
     }
 
-    while (dir_ptr.* != null) {
-        const entry = dir_ptr.*;
-        if (entry.*.isdir and !(flag.xdev and dev != @as(c.dev_t, @intCast(entry.*.dev)))) {
-            if (entry.*.lnk != null) {
+    while (dir_ptr.*) |entry| {
+        if (entry.isdir and !(flag.xdev and dev != @as(c.dev_t, @intCast(entry.dev)))) {
+            if (entry.lnk != null) {
                 if (flag.l) {
-                    if (hash.findino(@intCast(entry.*.inode), @intCast(entry.*.dev))) {
-                        entry.*.err = util.scopy("recursive, not followed");
+                    if (hash.findino(@intCast(entry.inode), @intCast(entry.dev))) {
+                        entry.err = util.scopy("recursive, not followed");
                     } else {
-                        hash.saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
-                        if (entry.*.lnk[0] == '/') {
-                            entry.*.child = unix_getfulltree(entry.*.lnk, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
+                        hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
+                        if (entry.lnk[0] == '/') {
+                            entry.child = unix_getfulltree(entry.lnk, lev + 1, dev, @ptrCast(&entry.size), &(entry.err));
                         } else {
                             const dlen = c.strlen(d);
-                            const llen = c.strlen(entry.*.lnk);
+                            const llen = c.strlen(entry.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
                                 path = @ptrCast(util.xrealloc(path, pathsize));
                             }
                             if (flag.f and c.strcmp(d, "/") == 0) {
-                                _ = c.sprintf(path, "%s%s", d, entry.*.lnk);
+                                _ = c.sprintf(path, "%s%s", d, entry.lnk);
                             } else {
-                                _ = c.sprintf(path, "%s/%s", d, entry.*.lnk);
+                                _ = c.sprintf(path, "%s/%s", d, entry.lnk);
                             }
-                            entry.*.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
+                            entry.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.size), &(entry.err));
                         }
                     }
                 }
             } else {
                 const dlen = c.strlen(d);
-                const nlen = c.strlen(entry.*.name);
+                const nlen = c.strlen(entry.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
                     path = @ptrCast(util.xrealloc(path, pathsize));
                 }
 
                 if (flag.f and c.strcmp(d, "/") == 0) {
-                    _ = c.sprintf(path, "%s%s", d, entry.*.name);
+                    _ = c.sprintf(path, "%s%s", d, entry.name);
                 } else {
-                    _ = c.sprintf(path, "%s/%s", d, entry.*.name);
+                    _ = c.sprintf(path, "%s/%s", d, entry.name);
                 }
 
-                hash.saveino(@intCast(entry.*.inode), @intCast(entry.*.dev));
-                entry.*.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.*.size), &(entry.*.err));
+                hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
+                entry.child = unix_getfulltree(path, lev + 1, dev, @ptrCast(&entry.size), &(entry.err));
 
                 if (flag.condense_singletons) {
-                    while (util.is_singleton(@ptrCast(entry))) {
-                        const child = entry.*.child;
-                        var segs = [_][*c]u8{ entry.*.name, child[0].*.name };
+                    while (util.is_singleton(entry)) {
+                        const child = entry.child;
+                        var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
-                        c.free(entry.*.name);
-                        entry.*.name = util.scopy(new_name);
-                        entry.*.child = child[0].*.child;
-                        entry.*.condensed = entry.*.condensed + 1 + child[0].*.condensed;
+                        c.free(entry.name);
+                        entry.name = util.scopy(new_name);
+                        entry.child = child[0].?.child;
+                        entry.condensed = entry.condensed + 1 + child[0].?.condensed;
                         free_dir(child);
                     }
                 }
             }
             // prune empty folders, unless they match the requested pattern
-            if (flag.prune and entry.*.child == null and
-                !(flag.matchdirs and pattern != 0 and pat.include(entry.*.name, patterns[0..@intCast(pattern)], entry.*.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
+            if (flag.prune and entry.child == null and
+                !(flag.matchdirs and pattern != 0 and pat.include(entry.name, patterns[0..@intCast(pattern)], entry.isdir, false, flag.ignorecase, file_pathsep[0]) != 0))
             {
                 const xp = entry;
-                var p: [*c][*c]types.Info = dir_ptr;
+                var p: [*c]?*types.Info = dir_ptr;
                 while (p.* != null) : (p += 1) p.* = (p + 1).*;
                 n -= 1;
-                c.free(xp.*.name);
-                if (xp.*.lnk != null) c.free(xp.*.lnk);
+                c.free(xp.name);
+                if (xp.lnk != null) c.free(xp.lnk);
                 c.free(@ptrCast(xp));
                 continue;
             }
         }
-        if (flag.du) size.* += @intCast(entry.*.size);
+        if (flag.du) size.* += @intCast(entry.size);
         dir_ptr += 1;
     }
 
@@ -836,7 +835,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 
     // sorting needs to be deferred for --du:
     if (list.topsort != null) {
-        std.mem.sort([*c]types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
+        std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
     c.free(path);
