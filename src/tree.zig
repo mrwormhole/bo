@@ -130,10 +130,8 @@ fn getMbCurMax() c_int {
 // ---------------------------------------------------------------------------
 var prot_buf: [11]u8 = undefined;
 var do_date_buf: [256]u8 = undefined;
-var getinfo_lbuf: [*c]u8 = null;
-var getinfo_lbufsize: usize = 0;
-var read_dir_path: [*c]u8 = null;
-var read_dir_pathsize: usize = 0;
+var getinfo_lbuf: []u8 = &.{};
+var read_dir_path: []u8 = &.{};
 
 // ---------------------------------------------------------------------------
 // Exported formatting helpers
@@ -454,9 +452,8 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
 
 // Split out stat portion from read_dir as prelude to just using stat structure directly.
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
-    if (getinfo_lbuf == null) {
-        getinfo_lbufsize = std.fs.max_path_bytes;
-        getinfo_lbuf = @ptrCast(util.xmalloc(getinfo_lbufsize));
+    if (getinfo_lbuf.len == 0) {
+        getinfo_lbuf = util.gpa.alloc(u8, std.fs.max_path_bytes) catch return null;
     }
 
     var ent_storage: types.Info = std.mem.zeroes(types.Info);
@@ -549,18 +546,17 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if ((lst_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFLNK)) {
         const lst_size: usize = @intCast(ent_storage.size);
-        if (lst_size + 1 > getinfo_lbufsize) {
-            getinfo_lbufsize = lst_size + 8192;
-            getinfo_lbuf = @ptrCast(util.xrealloc(getinfo_lbuf, getinfo_lbufsize));
+        if (lst_size + 1 > getinfo_lbuf.len) {
+            getinfo_lbuf = util.gpa.realloc(getinfo_lbuf, lst_size + 8192) catch return null;
         }
-        const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
+        const len: isize = c.readlink(path, getinfo_lbuf.ptr, getinfo_lbuf.len - 1);
         if (len < 0) {
             ent.lnk = util.scopy("[Error reading symbolic link information]");
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = util.scopy(getinfo_lbuf);
+            ent.lnk = util.scopy(getinfo_lbuf.ptr);
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -590,9 +586,8 @@ export fn free_dir(d: [*c]?*types.Info) void {
 }
 
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
-    if (read_dir_path == null) {
-        read_dir_pathsize = c.strLen(dir) + std.fs.max_path_bytes;
-        read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
+    if (read_dir_path.len == 0) {
+        read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch { n.* = -1; return null; };
     }
 
     const es: bool = dir[c.strLen(dir) - 1] == std.fs.path.sep;
@@ -614,21 +609,20 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 
         const dlen = c.strLen(dir);
         const elen = c.strLen(dname);
-        if (dlen + elen + 2 > read_dir_pathsize) {
-            read_dir_pathsize = dlen + elen + std.fs.max_path_bytes;
-            read_dir_path = @ptrCast(util.xrealloc(read_dir_path, read_dir_pathsize));
+        if (dlen + elen + 2 > read_dir_path.len) {
+            read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch { n.* = -1; return null; };
         }
         if (es) {
-            _ = c.sprintf(read_dir_path, "%s%s", dir, dname);
+            _ = c.sprintf(read_dir_path.ptr, "%s%s", dir, dname);
         } else {
-            _ = c.sprintf(read_dir_path, "%s/%s", dir, dname);
+            _ = c.sprintf(read_dir_path.ptr, "%s/%s", dir, dname);
         }
 
-        const info = getinfo(dname, read_dir_path);
+        const info = getinfo(dname, read_dir_path.ptr);
         if (info) |inf| {
             var com: ?*types.Comment = null;
             if (flag.showinfo) {
-                com = info_mod.infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
+                com = info_mod.infocheck(read_dir_path.ptr, dname, infotop, inf.isdir, flag.ignorecase);
             }
             if (com != null) {
                 var cnt: usize = 0;
@@ -720,7 +714,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     }
 
     if (lev >= maxdirs - 1) {
-        dirs = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
+        const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch return null;
+        dirs = new_dirs.ptr;
         maxdirs += 1024;
     }
 
@@ -911,9 +906,21 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
     @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(types.Flags)], 0);
 
     maxdirs = std.fs.max_path_bytes;
-    dirs = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * maxdirs)));
-    @memset(@as([*]u8, @ptrCast(dirs))[0 .. @sizeOf(c_int) * maxdirs], 0);
-    dirs[0] = 0;
+    const dirs_buf = try util.gpa.alloc(c_int, maxdirs);
+    @memset(dirs_buf, 0);
+    dirs = dirs_buf.ptr;
+    defer {
+        util.gpa.free(dirs[0..maxdirs]);
+        dirs = null;
+        if (getinfo_lbuf.len > 0) {
+            util.gpa.free(getinfo_lbuf);
+            getinfo_lbuf = &.{};
+        }
+        if (read_dir_path.len > 0) {
+            util.gpa.free(read_dir_path);
+            read_dir_path = &.{};
+        }
+    }
     Level = -1;
 
     _ = c.setlocale(c.LC_CTYPE, "");
