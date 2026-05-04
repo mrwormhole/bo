@@ -11,7 +11,6 @@ const html = @import("html.zig");
 const util = @import("util.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
-const freeInfo = info_mod.freeInfo;
 const freeDir = info_mod.freeDir;
 const linux = @import("linux.zig");
 

@@ -10,7 +10,7 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(exe);
 
     makeRunStep(b, exe);
-    makeTestStep(b, target, optimize);
+    makeTestStep(b, target, optimize, use_llvm, use_lld);
 }
 
 fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, use_llvm: ?bool, use_lld: ?bool) *std.Build.Step.Compile {
@@ -21,10 +21,9 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
             .target = target,
             .optimize = optimize,
         }),
+        .use_lld = use_lld,
+        .use_llvm = use_llvm,
     });
-
-    exe.use_llvm = use_llvm;
-    exe.use_lld = use_lld;
     exe.root_module.linkSystemLibrary("c", .{});
 
     return exe;
@@ -43,13 +42,15 @@ fn makeRunStep(b: *std.Build, exe: *std.Build.Step.Compile) void {
     run_step.dependOn(&run_cmd.step);
 }
 
-fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) void {
+fn makeTestStep(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, use_llvm: ?bool, use_lld: ?bool) void {
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/tests.zig"),
             .target = target,
             .optimize = optimize,
         }),
+        .use_lld = use_lld,
+        .use_llvm = use_llvm,
     });
     tests.root_module.linkSystemLibrary("c", .{});
 

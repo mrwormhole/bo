@@ -193,15 +193,15 @@ fn fprune(
         if (show and flag.showinfo) {
             const com = info_mod.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
             if (com != null) {
-                var cnt: usize = 0;
-                while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch {
+                var i: usize = 0;
+                while (com.?.desc[i] != null) : (i += 1) {}
+                const comment_buf = util.gpa.alloc([*c]u8, i + 1) catch {
                     std.debug.print("tree: virtual memory exhausted.\n", .{});
                     std.process.exit(1);
                 };
                 ent[0].comment = comment_buf.ptr;
                 var j: usize = 0;
-                while (j < cnt) : (j += 1) {
+                while (j < i) : (j += 1) {
                     if (util.gpa.dupeSentinel(u8, c.strSpan(com.?.desc[j]), 0)) |s| {
                         ent[0].comment[j] = s.ptr;
                     } else |_| {
@@ -209,7 +209,7 @@ fn fprune(
                         std.process.exit(1);
                     }
                 }
-                ent[0].comment[cnt] = null;
+                ent[0].comment[i] = null;
             }
         }
 
@@ -263,22 +263,22 @@ fn fprune(
     if (end != null) end[0].next = null;
 
     if (count > 0) {
-        const arr_buf = util.gpa.alloc(?*types.Info, count + 1) catch {
+        const arr = util.gpa.alloc(?*types.Info, count + 1) catch {
             std.debug.print("tree: virtual memory exhausted.\n", .{});
             std.process.exit(1);
         };
         var i: usize = 0;
         var e: [*c]types.Info = new_head;
         while (e != null) : (i += 1) {
-            arr_buf[i] = e;
+            arr[i] = e;
             e = e[0].next;
         }
-        arr_buf[count] = null;
+        arr[count] = null;
 
         if (list.topsort != null and count > 1) {
-            std.mem.sort(?*types.Info, arr_buf[0..count], list.topsort.?, list.infoLessThan);
+            std.mem.sort(?*types.Info, arr[0..count], list.topsort.?, list.infoLessThan);
         }
-        dir = arr_buf.ptr;
+        dir = arr.ptr;
     }
 
     if (ig != null) _ = filter.flush_filterstack();
