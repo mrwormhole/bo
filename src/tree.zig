@@ -587,7 +587,10 @@ export fn free_dir(d: [*c]?*types.Info) void {
 
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path.len == 0) {
-        read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch { n.* = -1; return null; };
+        read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch {
+            n.* = -1;
+            return null;
+        };
     }
 
     const es: bool = dir[c.strLen(dir) - 1] == std.fs.path.sep;
@@ -610,7 +613,10 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const dlen = c.strLen(dir);
         const elen = c.strLen(dname);
         if (dlen + elen + 2 > read_dir_path.len) {
-            read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch { n.* = -1; return null; };
+            read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch {
+                n.* = -1;
+                return null;
+            };
         }
         if (es) {
             _ = c.sprintf(read_dir_path.ptr, "%s%s", dir, dname);
