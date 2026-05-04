@@ -614,6 +614,9 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const elen = c.strLen(dname);
         if (dlen + elen + 2 > read_dir_path.len) {
             read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch {
+                dl[p] = null;
+                free_dir(dl);
+                _ = c.closedir(@ptrCast(d));
                 n.* = -1;
                 return null;
             };
@@ -720,7 +723,14 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     }
 
     if (lev >= maxdirs - 1) {
-        const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch return null;
+        const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch {
+            if (tmp_pattern != 0) pattern = tmp_pattern;
+            if (ig != null) _ = filter.pop_filterstack();
+            if (inf != null) _ = info_mod.pop_infostack();
+            c.free(path);
+            free_dir(sav);
+            return null;
+        };
         dirs = new_dirs.ptr;
         maxdirs += 1024;
     }
