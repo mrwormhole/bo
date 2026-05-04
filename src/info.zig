@@ -146,14 +146,7 @@ pub fn pop_infostack() ?*types.InfoFile {
         const cur = cn.?;
         cn = cur.next;
 
-        // Note: original C frees pattern->pattern (the string) but never the
-        // pattern struct nodes themselves — preserved verbatim.
-        var pp: ?*types.Pattern = cur.pattern;
-        while (pp != null) {
-            const pcur = pp.?;
-            pp = pcur.next;
-            c.free(pcur.pattern);
-        }
+        pat.free_pattern_list(cur.pattern);
 
         var di: usize = 0;
         while (cur.desc[di] != null) : (di += 1) c.free(cur.desc[di]);

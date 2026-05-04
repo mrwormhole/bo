@@ -138,7 +138,10 @@ pub fn gittrim(s: [*c]u8) void {
     var ri: usize = 0;
     var re: usize = 0;
     while (s[ri] != 0) {
-        if (s[ri] == '\\') ri += 1;
+        if (s[ri] == '\\') {
+            ri += 1;
+            if (s[ri] == 0) break;
+        }
         s[re] = s[ri];
         re += 1;
         ri += 1;
@@ -240,4 +243,11 @@ test "copy handles empty string" {
     const dst = scopy("");
     defer std.c.free(dst);
     try std.testing.expectEqualStrings("", std.mem.sliceTo(dst, 0));
+}
+
+test "gittrim handles dangling trailing backslash" {
+    var buf = [_]u8{ 'f', 'o', 'o', '\\', 0, 'X', 0 };
+    gittrim(&buf);
+    try std.testing.expectEqualStrings("foo", std.mem.sliceTo(&buf, 0));
+    try std.testing.expectEqual(@as(u8, 'X'), buf[5]);
 }
