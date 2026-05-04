@@ -59,12 +59,15 @@ fn nextpc(p: *[*c]u8, tok: *c_int) [*c]u8 {
 }
 
 fn newent(name: [*c]const u8) *types.Info {
-    const n: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
-    @memset(@as([*]u8, @ptrCast(n))[0..@sizeOf(types.Info)], 0);
-    n.name = util.scopy(name);
-    n.child = null;
-    n.tchild = null;
-    n.next = null;
+    const n: *types.Info = util.gpa.create(types.Info) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    n.* = std.mem.zeroes(types.Info);
+    n.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    }).ptr;
     return n;
 }
 
@@ -95,7 +98,16 @@ fn freefiletree(ent: [*c]types.Info) void {
         if (ptr[0].tchild != null) freefiletree(ptr[0].tchild);
         const t = ptr;
         ptr = ptr[0].next;
-        std.c.free(@ptrCast(t));
+        if (t[0].name != null) util.gpa.free(@constCast(c.strSpan(t[0].name)));
+        if (t[0].lnk != null) util.gpa.free(@constCast(c.strSpan(t[0].lnk)));
+        if (t[0].comment != null) {
+            var j: usize = 0;
+            while (t[0].comment[j] != null) : (j += 1) {
+                util.gpa.free(@constCast(c.strSpan(t[0].comment[j])));
+            }
+            util.gpa.free(t[0].comment[0 .. j + 1]);
+        }
+        util.gpa.destroy(@as(*types.Info, @ptrCast(t)));
     }
 }
 
@@ -117,7 +129,10 @@ fn fprune(
     var matched = matched_in;
     var tmp_pattern: c_int = 0;
 
-    const fpath: []u8 = util.gpa.alloc(u8, MAXPATH) catch return null;
+    const fpath: []u8 = util.gpa.alloc(u8, MAXPATH) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
     defer util.gpa.free(fpath);
 
     const path_len = c.strLen(path);
@@ -186,12 +201,23 @@ fn fprune(
         if (show and flag.showinfo) {
             const com = info_mod.infocheck(path, ent[0].name, @intFromBool(inf != null), ent[0].isdir, flag.ignorecase);
             if (com != null) {
-                var i: usize = 0;
-                while (com.?.desc[i] != null) : (i += 1) {}
-                ent[0].comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (i + 1))));
+                var cnt: usize = 0;
+                while (com.?.desc[cnt] != null) : (cnt += 1) {}
+                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch {
+                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                    std.process.exit(1);
+                };
+                ent[0].comment = comment_buf.ptr;
                 var j: usize = 0;
-                while (j < i) : (j += 1) ent[0].comment[j] = util.scopy(com.?.desc[j]);
-                ent[0].comment[i] = null;
+                while (j < cnt) : (j += 1) {
+                    if (util.gpa.dupeSentinel(u8, c.strSpan(com.?.desc[j]), 0)) |s| {
+                        ent[0].comment[j] = s.ptr;
+                    } else |_| {
+                        std.debug.print("tree: virtual memory exhausted.\n", .{});
+                        std.process.exit(1);
+                    }
+                }
+                ent[0].comment[cnt] = null;
             }
         }
 
@@ -208,8 +234,12 @@ fn fprune(
                 const child = ent[0].child;
                 var segs = [_][*c]const u8{ ent[0].name, child[0].?.name };
                 const name = util.pathconcat(@ptrCast(&segs), 2);
-                std.c.free(ent[0].name);
-                ent[0].name = util.scopy(name);
+                const name_copy = util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
+                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                    std.process.exit(1);
+                };
+                util.gpa.free(@constCast(c.strSpan(ent[0].name)));
+                ent[0].name = name_copy.ptr;
                 ent[0].child = child[0].?.child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0].?.condensed;
                 free_dir(child);
@@ -241,19 +271,22 @@ fn fprune(
     if (end != null) end[0].next = null;
 
     if (count > 0) {
-        const arr: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * (count + 1))));
+        const arr_buf = util.gpa.alloc(?*types.Info, count + 1) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
         var i: usize = 0;
         var e: [*c]types.Info = new_head;
         while (e != null) : (i += 1) {
-            arr[i] = e;
+            arr_buf[i] = e;
             e = e[0].next;
         }
-        arr[count] = null;
+        arr_buf[count] = null;
 
         if (list.topsort != null and count > 1) {
-            std.mem.sort(?*types.Info, arr[0..count], list.topsort.?, list.infoLessThan);
+            std.mem.sort(?*types.Info, arr_buf[0..count], list.topsort.?, list.infoLessThan);
         }
-        dir = arr;
+        dir = arr_buf.ptr;
     }
 
     if (ig != null) _ = filter.flush_filterstack();
@@ -285,7 +318,10 @@ pub fn file_getfulltree(
     }
 
     var root: [*c]types.Info = null;
-    const path: []u8 = util.gpa.alloc(u8, MAXPATH) catch return null;
+    const path: []u8 = util.gpa.alloc(u8, MAXPATH) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
     defer util.gpa.free(path);
 
     while (c.fgets(path.ptr, MAXPATH, fp) != null) {
@@ -338,7 +374,10 @@ pub fn file_getfulltree(
         if (ent != null and link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.scopy(link + 4);
+            ent[0].lnk = (util.gpa.dupeSentinel(u8, c.strSpan(link + 4), 0) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            }).ptr;
         }
     }
 
@@ -370,9 +409,15 @@ pub fn tabedfile_getfulltree(
 
     var root: [*c]types.Info = null;
     const maxstack: usize = 2048;
-    const path: []u8 = util.gpa.alloc(u8, MAXPATH) catch return null;
+    const path: []u8 = util.gpa.alloc(u8, MAXPATH) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
     defer util.gpa.free(path);
-    const istack: []?*types.Info = util.gpa.alloc(?*types.Info, maxstack) catch return null;
+    const istack: []?*types.Info = util.gpa.alloc(?*types.Info, maxstack) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
     defer util.gpa.free(istack);
     @memset(istack, null);
 
@@ -429,7 +474,10 @@ pub fn tabedfile_getfulltree(
         if (link != null) {
             ent[0].isdir = false;
             ent[0].mode = @intCast(std.posix.S.IFLNK);
-            ent[0].lnk = util.scopy(link + 4);
+            ent[0].lnk = (util.gpa.dupeSentinel(u8, c.strSpan(link + 4), 0) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            }).ptr;
         }
         top = tabs;
     }

@@ -511,10 +511,13 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (flag.d and ((st_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR))) return null;
 
     // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
-    const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
-    @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
+    const ent: *types.Info = util.gpa.create(types.Info) catch return null;
+    ent.* = std.mem.zeroes(types.Info);
 
-    ent.name = util.scopy(name);
+    ent.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
+        util.gpa.destroy(ent);
+        return null;
+    }).ptr;
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
@@ -547,16 +550,25 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if ((lst_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFLNK)) {
         const lst_size: usize = @intCast(ent_storage.size);
         if (lst_size + 1 > getinfo_lbuf.len) {
-            getinfo_lbuf = util.gpa.realloc(getinfo_lbuf, lst_size + 8192) catch return null;
+            getinfo_lbuf = util.gpa.realloc(getinfo_lbuf, lst_size + 8192) catch {
+                freeInfo(ent);
+                return null;
+            };
         }
         const len: isize = c.readlink(path, getinfo_lbuf.ptr, getinfo_lbuf.len - 1);
         if (len < 0) {
-            ent.lnk = util.scopy("[Error reading symbolic link information]");
+            ent.lnk = (util.gpa.dupeSentinel(u8, "[Error reading symbolic link information]", 0) catch {
+                freeInfo(ent);
+                return null;
+            }).ptr;
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = util.scopy(getinfo_lbuf.ptr);
+            ent.lnk = (util.gpa.dupeSentinel(u8, getinfo_lbuf[0..@intCast(len)], 0) catch {
+                freeInfo(ent);
+                return null;
+            }).ptr;
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -567,22 +579,29 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     return ent;
 }
 
-export fn free_dir(d: [*c]?*types.Info) void {
-    var i: usize = 0;
-    while (d[i]) |entry| : (i += 1) {
-        c.free(entry.name);
-        if (entry.lnk != null) c.free(entry.lnk);
-        if (comptime builtin.os.tag == .linux) {
-            if (entry.secontext != null) c.free(entry.secontext);
-        }
-        if (entry.comment != null) {
-            var j: usize = 0;
-            while (entry.comment[j] != null) : (j += 1) c.free(entry.comment[j]);
-        }
-        if (entry.err != null) c.free(entry.err);
-        c.free(@ptrCast(entry));
+fn freeInfo(entry: *types.Info) void {
+    if (entry.name != null) util.gpa.free(@constCast(c.strSpan(entry.name)));
+    if (entry.lnk != null) util.gpa.free(@constCast(c.strSpan(entry.lnk)));
+    if (comptime builtin.os.tag == .linux) {
+        if (entry.secontext != null) util.gpa.free(@constCast(c.strSpan(entry.secontext)));
     }
-    c.free(@ptrCast(d));
+    if (entry.comment != null) {
+        var j: usize = 0;
+        while (entry.comment[j] != null) : (j += 1) {
+            util.gpa.free(@constCast(c.strSpan(entry.comment[j])));
+        }
+        util.gpa.free(entry.comment[0 .. j + 1]);
+    }
+    if (entry.err != null) util.gpa.free(@constCast(c.strSpan(entry.err)));
+    util.gpa.destroy(entry);
+}
+
+export fn free_dir(d: [*c]?*types.Info) void {
+    var count: usize = 0;
+    while (d[count]) |entry| : (count += 1) {
+        freeInfo(entry);
+    }
+    util.gpa.free(d[0 .. count + 1]);
 }
 
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
@@ -599,10 +618,14 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (d == null) return null;
 
     var ne: usize = c.MINIT;
-    var dl: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * ne)));
+    var dl_buf = util.gpa.alloc(?*types.Info, ne) catch {
+        _ = c.closedir(@ptrCast(d));
+        n.* = -1;
+        return null;
+    };
     var p: usize = 0;
 
-    while (true) {
+    outer: while (true) {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
         if (ent == null) break;
         const dname: [*c]const u8 = @ptrCast(&ent.?.d_name);
@@ -614,8 +637,10 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const elen = c.strLen(dname);
         if (dlen + elen + 2 > read_dir_path.len) {
             read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch {
-                dl[p] = null;
-                free_dir(dl);
+                for (dl_buf[0..p]) |maybe_inf| {
+                    if (maybe_inf) |entry| freeInfo(entry);
+                }
+                util.gpa.free(dl_buf);
                 _ = c.closedir(@ptrCast(d));
                 n.* = -1;
                 return null;
@@ -636,16 +661,39 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
             if (com != null) {
                 var cnt: usize = 0;
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                inf.comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
+                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch {
+                    freeInfo(inf);
+                    continue :outer;
+                };
+                inf.comment = comment_buf.ptr;
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.scopy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) {
+                    if (util.gpa.dupeSentinel(u8, c.strSpan(com.?.desc[ci]), 0)) |s| {
+                        inf.comment[ci] = s.ptr;
+                    } else |_| {
+                        for (comment_buf[0..ci]) |s| util.gpa.free(@constCast(c.strSpan(s)));
+                        util.gpa.free(comment_buf);
+                        inf.comment = null;
+                        freeInfo(inf);
+                        continue :outer;
+                    }
+                }
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + c.MINC))));
+                dl_buf = util.gpa.realloc(dl_buf, ne + c.MINC) catch {
+                    freeInfo(inf);
+                    for (dl_buf[0..p]) |maybe_inf| {
+                        if (maybe_inf) |entry| freeInfo(entry);
+                    }
+                    util.gpa.free(dl_buf);
+                    _ = c.closedir(@ptrCast(d));
+                    n.* = -1;
+                    return null;
+                };
                 ne += c.MINC;
             }
-            dl[p] = inf;
+            dl_buf[p] = inf;
             p += 1;
         }
     }
@@ -653,12 +701,16 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 
     n.* = @intCast(p);
     if (n.* == 0) {
-        c.free(@ptrCast(dl));
+        util.gpa.free(dl_buf);
         return null;
     }
 
-    dl[p] = null;
-    return dl;
+    dl_buf[p] = null;
+    dl_buf = util.gpa.realloc(dl_buf, p + 1) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    return dl_buf.ptr;
 }
 
 // This is for all the impossible things people wanted the old tree to do.
@@ -667,6 +719,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c]?*types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
+    var path_buf: []u8 = &.{};
     var pathsize: usize = 0;
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
@@ -701,23 +754,36 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     dir_ptr = sav;
 
     if (dir_ptr == null and n != 0) {
-        err.* = util.scopy("error opening dir");
+        err.* = if (util.gpa.dupeSentinel(u8, "error opening dir", 0)) |s| s.ptr else |_| null;
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     if (n == 0) {
         if (sav != null) free_dir(sav);
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     pathsize = std.fs.max_path_bytes;
-    path = @ptrCast(util.xmalloc(pathsize));
+    path_buf = util.gpa.alloc(u8, pathsize) catch {
+        free_dir(sav);
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
+        if (tmp_pattern != 0) pattern = tmp_pattern;
+        return null;
+    };
+    path = path_buf.ptr;
 
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = util.scopy(path);
+        err.* = if (util.gpa.dupeSentinel(u8, c.strSpan(path), 0)) |s| s.ptr else |_| null;
         free_dir(sav);
-        c.free(path);
+        util.gpa.free(path_buf);
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
         if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
@@ -727,7 +793,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (tmp_pattern != 0) pattern = tmp_pattern;
             if (ig != null) _ = filter.pop_filterstack();
             if (inf != null) _ = info_mod.pop_infostack();
-            c.free(path);
+            util.gpa.free(path_buf);
             free_dir(sav);
             return null;
         };
@@ -740,7 +806,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (entry.lnk != null) {
                 if (flag.l) {
                     if (hash.findino(@intCast(entry.inode), @intCast(entry.dev))) {
-                        entry.err = util.scopy("recursive, not followed");
+                        entry.err = if (util.gpa.dupeSentinel(u8, "recursive, not followed", 0)) |s| s.ptr else |_| null;
                     } else {
                         hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
                         if (entry.lnk[0] == std.fs.path.sep) {
@@ -750,7 +816,15 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                             const llen = c.strLen(entry.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
-                                path = @ptrCast(util.xrealloc(path, pathsize));
+                                path_buf = util.gpa.realloc(path_buf, pathsize) catch {
+                                    if (tmp_pattern != 0) pattern = tmp_pattern;
+                                    if (ig != null) _ = filter.pop_filterstack();
+                                    if (inf != null) _ = info_mod.pop_infostack();
+                                    util.gpa.free(path_buf);
+                                    free_dir(sav);
+                                    return null;
+                                };
+                                path = path_buf.ptr;
                             }
                             if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
                                 _ = c.sprintf(path, "%s%s", d, entry.lnk);
@@ -766,7 +840,15 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 const nlen = c.strLen(entry.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
-                    path = @ptrCast(util.xrealloc(path, pathsize));
+                    path_buf = util.gpa.realloc(path_buf, pathsize) catch {
+                        if (tmp_pattern != 0) pattern = tmp_pattern;
+                        if (ig != null) _ = filter.pop_filterstack();
+                        if (inf != null) _ = info_mod.pop_infostack();
+                        util.gpa.free(path_buf);
+                        free_dir(sav);
+                        return null;
+                    };
+                    path = path_buf.ptr;
                 }
 
                 if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
@@ -783,8 +865,9 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         const child = entry.child;
                         var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
-                        c.free(entry.name);
-                        entry.name = util.scopy(new_name);
+                        const new_name_copy = util.gpa.dupeSentinel(u8, c.strSpan(new_name), 0) catch break;
+                        util.gpa.free(@constCast(c.strSpan(entry.name)));
+                        entry.name = new_name_copy.ptr;
                         entry.child = child[0].?.child;
                         entry.condensed = entry.condensed + 1 + child[0].?.condensed;
                         free_dir(child);
@@ -799,9 +882,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 var p: [*c]?*types.Info = dir_ptr;
                 while (p.* != null) : (p += 1) p.* = (p + 1).*;
                 n -= 1;
-                c.free(xp.name);
-                if (xp.lnk != null) c.free(xp.lnk);
-                c.free(@ptrCast(xp));
+                freeInfo(xp);
                 continue;
             }
         }
@@ -819,7 +900,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
-    c.free(path);
+    util.gpa.free(path_buf);
     if (n == 0) {
         free_dir(sav);
         return null;
