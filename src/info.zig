@@ -204,3 +204,30 @@ pub fn printcomment(w: *std.Io.Writer, line: usize, lines: usize, s: [*c]u8) voi
         (if (line == lines - 1) linedraw.*.cbot else linedraw.*.cext);
     w.print("{s} {s}\n", .{ std.mem.span(drw), std.mem.span(s) }) catch {};
 }
+
+// will be removed after allocator is removed from util.zig
+pub fn freeInfo(entry: *types.Info) void {
+    if (entry.name != null) util.gpa.free(@constCast(c.strSpan(entry.name)));
+    if (entry.lnk != null) util.gpa.free(@constCast(c.strSpan(entry.lnk)));
+    if (comptime builtin.os.tag == .linux) {
+        if (entry.secontext != null) util.gpa.free(@constCast(c.strSpan(entry.secontext)));
+    }
+    if (entry.comment != null) {
+        var j: usize = 0;
+        while (entry.comment[j] != null) : (j += 1) {
+            util.gpa.free(@constCast(c.strSpan(entry.comment[j])));
+        }
+        util.gpa.free(entry.comment[0 .. j + 1]);
+    }
+    if (entry.err != null) util.gpa.free(@constCast(c.strSpan(entry.err)));
+    util.gpa.destroy(entry);
+}
+
+// will be removed after allocator is removed from util.zig
+pub fn freeDir(d: [*c]?*types.Info) void {
+    var count: usize = 0;
+    while (d[count]) |entry| : (count += 1) {
+        freeInfo(entry);
+    }
+    util.gpa.free(d[0 .. count + 1]);
+}

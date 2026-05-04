@@ -2,12 +2,15 @@
 
 const std = @import("std");
 const c = @import("cstd.zig");
+const builtin = @import("builtin");
 
 const types = @import("types.zig");
 const pat = @import("pattern.zig");
 const util = @import("util.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
+const freeInfo = info_mod.freeInfo;
+const freeDir = info_mod.freeDir;
 const list = @import("list.zig");
 
 extern var flag: types.Flags;
@@ -15,8 +18,6 @@ extern var pattern: c_int;
 extern var ipattern: c_int;
 extern var patterns: [*c][*c]u8;
 extern var ipatterns: [*c][*c]u8;
-
-extern fn free_dir(d: [*c]?*types.Info) void;
 
 const MAXPATH = 64 * 1024; // 64KB paths maximum
 
@@ -98,16 +99,7 @@ fn freefiletree(ent: [*c]types.Info) void {
         if (ptr[0].tchild != null) freefiletree(ptr[0].tchild);
         const t = ptr;
         ptr = ptr[0].next;
-        if (t[0].name != null) util.gpa.free(@constCast(c.strSpan(t[0].name)));
-        if (t[0].lnk != null) util.gpa.free(@constCast(c.strSpan(t[0].lnk)));
-        if (t[0].comment != null) {
-            var j: usize = 0;
-            while (t[0].comment[j] != null) : (j += 1) {
-                util.gpa.free(@constCast(c.strSpan(t[0].comment[j])));
-            }
-            util.gpa.free(t[0].comment[0 .. j + 1]);
-        }
-        util.gpa.destroy(@as(*types.Info, @ptrCast(t)));
+        freeInfo(@ptrCast(t));
     }
 }
 
@@ -242,7 +234,7 @@ fn fprune(
                 ent[0].name = name_copy.ptr;
                 ent[0].child = child[0].?.child;
                 ent[0].condensed = ent[0].condensed + 1 + child[0].?.condensed;
-                free_dir(child);
+                freeDir(child);
             }
         }
 

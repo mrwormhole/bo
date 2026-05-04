@@ -16,6 +16,8 @@ const html = @import("html.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
 const file_mod = @import("file.zig");
+const freeInfo = info_mod.freeInfo;
+const freeDir = info_mod.freeDir;
 const util = @import("util.zig");
 const hash = @import("hash.zig");
 const help = @import("help.zig");
@@ -585,31 +587,6 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     return ent;
 }
 
-fn freeInfo(entry: *types.Info) void {
-    if (entry.name != null) util.gpa.free(@constCast(c.strSpan(entry.name)));
-    if (entry.lnk != null) util.gpa.free(@constCast(c.strSpan(entry.lnk)));
-    if (comptime builtin.os.tag == .linux) {
-        if (entry.secontext != null) util.gpa.free(@constCast(c.strSpan(entry.secontext)));
-    }
-    if (entry.comment != null) {
-        var j: usize = 0;
-        while (entry.comment[j] != null) : (j += 1) {
-            util.gpa.free(@constCast(c.strSpan(entry.comment[j])));
-        }
-        util.gpa.free(entry.comment[0 .. j + 1]);
-    }
-    if (entry.err != null) util.gpa.free(@constCast(c.strSpan(entry.err)));
-    util.gpa.destroy(entry);
-}
-
-export fn free_dir(d: [*c]?*types.Info) void {
-    var count: usize = 0;
-    while (d[count]) |entry| : (count += 1) {
-        freeInfo(entry);
-    }
-    util.gpa.free(d[0 .. count + 1]);
-}
-
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path.len == 0) {
         read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch {
@@ -767,7 +744,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         return null;
     }
     if (n == 0) {
-        if (sav != null) free_dir(sav);
+        if (sav != null) freeDir(sav);
         if (ig != null) _ = filter.pop_filterstack();
         if (inf != null) _ = info_mod.pop_infostack();
         if (tmp_pattern != 0) pattern = tmp_pattern;
@@ -775,7 +752,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     }
     pathsize = std.fs.max_path_bytes;
     path_buf = util.gpa.alloc(u8, pathsize) catch {
-        free_dir(sav);
+        freeDir(sav);
         if (ig != null) _ = filter.pop_filterstack();
         if (inf != null) _ = info_mod.pop_infostack();
         if (tmp_pattern != 0) pattern = tmp_pattern;
@@ -786,7 +763,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     if (flag.flimit > 0 and n > flag.flimit) {
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
         err.* = if (util.gpa.dupeSentinel(u8, c.strSpan(path), 0)) |s| s.ptr else |_| null;
-        free_dir(sav);
+        freeDir(sav);
         util.gpa.free(path_buf);
         if (ig != null) _ = filter.pop_filterstack();
         if (inf != null) _ = info_mod.pop_infostack();
@@ -800,7 +777,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (ig != null) _ = filter.pop_filterstack();
             if (inf != null) _ = info_mod.pop_infostack();
             util.gpa.free(path_buf);
-            free_dir(sav);
+            freeDir(sav);
             return null;
         };
         dirs = new_dirs.ptr;
@@ -827,7 +804,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                                     if (ig != null) _ = filter.pop_filterstack();
                                     if (inf != null) _ = info_mod.pop_infostack();
                                     util.gpa.free(path_buf);
-                                    free_dir(sav);
+                                    freeDir(sav);
                                     return null;
                                 };
                                 path = path_buf.ptr;
@@ -851,7 +828,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         if (ig != null) _ = filter.pop_filterstack();
                         if (inf != null) _ = info_mod.pop_infostack();
                         util.gpa.free(path_buf);
-                        free_dir(sav);
+                        freeDir(sav);
                         return null;
                     };
                     path = path_buf.ptr;
@@ -876,7 +853,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         entry.name = new_name_copy.ptr;
                         entry.child = child[0].?.child;
                         entry.condensed = entry.condensed + 1 + child[0].?.condensed;
-                        free_dir(child);
+                        freeDir(child);
                     }
                 }
             }
@@ -908,7 +885,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 
     util.gpa.free(path_buf);
     if (n == 0) {
-        free_dir(sav);
+        freeDir(sav);
         return null;
     }
     if (ig != null) _ = filter.pop_filterstack();
