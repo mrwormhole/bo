@@ -874,6 +874,8 @@ pub fn run(init: std.process.Init, args: []const [:0]const u8) RunError!void {
     try runWithArgv(init, argv_buf[0..args.len :null]);
 }
 
+// FIXME: simplify this by passing args so that we don't do argv_buf allocation and copying at all.
+// additionally, flag parsing should be simpler and flags struct get a better name and other files can stop extern flags access.
 fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void {
     const argc = argv_slice.len;
     const argv: [*c][*c]u8 = argv_slice.ptr;
