@@ -98,7 +98,7 @@ export fn emit_hyperlink_path(w: *std.Io.Writer, dirname: [*c]u8) void {
 //  analysis of the different outputs is required.  This all is not as clean as I
 //  had hoped it to be.
 
-pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool) void {
+pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool) std.mem.Allocator.Error!void {
     var tot = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
@@ -164,7 +164,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
         } else {
             lc.newline.?(info, 0, 0, 0);
             if (dir != null) {
-                subtotal = listdir(lc, dirname[i], dir, 1, st_dev, needfulltree);
+                subtotal = try listdir(lc, dirname[i], dir, 1, st_dev, needfulltree);
                 subtotal.dirs += 1;
             }
         }
@@ -196,7 +196,7 @@ pub fn listdir(
     lev: c_int,
     dev: c.dev_t,
     hasfulltree: bool,
-) types.Totals {
+) std.mem.Allocator.Error!types.Totals {
     var tot = types.Totals{ .files = 0, .dirs = 0, .size = 0 };
     var subtotal: types.Totals = undefined;
     var ig: ?*types.IgnoreFile = null;
@@ -224,7 +224,8 @@ pub fn listdir(
     var cursor = dir_in;
     dirs[@intCast(lev)] = if (cursor[1] != null) 1 else 2;
 
-    var path: [*c]u8 = @ptrCast(util.xmalloc(@sizeOf(u8) * pathlen));
+    var path: []u8 = try util.gpa.alloc(u8, pathlen);
+    defer util.gpa.free(path);
 
     while (cursor[0]) |entry| : (cursor += 1) {
         _ = lc.printinfo.?(dirname, entry, lev);
@@ -233,18 +234,18 @@ pub fn listdir(
         if (namemax < namelen) {
             namemax = namelen;
             pathlen = dirlen + namemax;
-            path = @ptrCast(util.xrealloc(path, pathlen));
+            path = try util.gpa.realloc(path, pathlen);
         }
         if (es) {
-            _ = c.sprintf(path, "%s%s", dirname, entry.name);
+            _ = c.sprintf(path.ptr, "%s%s", dirname, entry.name);
         } else {
-            _ = c.sprintf(path, "%s/%s", dirname, entry.name);
+            _ = c.sprintf(path.ptr, "%s/%s", dirname, entry.name);
         }
-        const filename: [*c]u8 = if (flag.f) path else entry.name;
+        const filename: [*c]u8 = if (flag.f) path.ptr else entry.name;
 
         var descend: c_int = 0;
         err = null;
-        const newpath: [*c]u8 = path;
+        const newpath: [*c]u8 = path.ptr;
 
         if (entry.isdir) {
             tot.dirs += 1;
@@ -286,26 +287,26 @@ pub fn listdir(
                     if (flag.R) {
                         const outsave = util.file;
                         var paths = [_][*c]u8{ newpath, null };
-                        const output: [*c]u8 = @ptrCast(util.xmalloc(c.strLen(newpath) + 13));
-                        const dirsave: [*c]c_int = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * @as(usize, @intCast(lev + 2)))));
+                        const output: []u8 = try util.gpa.alloc(u8, c.strLen(newpath) + 13);
+                        defer util.gpa.free(output);
+                        const dirsave: []c_int = try util.gpa.alloc(c_int, @as(usize, @intCast(lev + 2)));
+                        defer util.gpa.free(dirsave);
 
-                        const copy_bytes: usize = @sizeOf(c_int) * @as(usize, @intCast(lev + 1));
-                        _ = c.memcpy(dirsave, dirs, copy_bytes);
-                        _ = c.sprintf(output, "%s/00Tree.html", newpath);
-                        const output_name = std.mem.span(@as([*:0]const u8, @ptrCast(output)));
+                        const copy_len: usize = @intCast(lev + 1);
+                        @memcpy(dirsave[0..copy_len], dirs[0..copy_len]);
+                        _ = c.sprintf(output.ptr, "%s/00Tree.html", newpath);
+                        const output_name = std.mem.span(@as([*:0]const u8, @ptrCast(output.ptr)));
                         util.file = std.Io.Dir.cwd().createFile(util.io, output_name, .{}) catch {
                             std.debug.print("tree: invalid filename '{s}'\n", .{output_name});
                             c.exit(c.EXIT_FAILURE);
                             unreachable;
                         };
-                        emit_tree(lc, &paths, hasfulltree);
+                        try emit_tree(lc, &paths, hasfulltree);
 
-                        c.free(output);
                         util.file.close(util.io);
                         util.file = outsave;
 
-                        _ = c.memcpy(dirs, dirsave, copy_bytes);
-                        c.free(dirsave);
+                        @memcpy(dirs[0..copy_len], dirsave[0..copy_len]);
                         htmldescend = 10;
                     } else {
                         htmldescend = 0;
@@ -346,7 +347,7 @@ pub fn listdir(
         if (descend > 0) {
             lc.newline.?(entry, lev, 0, 0);
 
-            subtotal = listdir(lc, newpath, subdir, lev + 1, dev, hasfulltree);
+            subtotal = try listdir(lc, newpath, subdir, lev + 1, dev, hasfulltree);
             tot.dirs += subtotal.dirs;
             tot.files += subtotal.files;
         } else if (needsclosed == 0) {
@@ -369,6 +370,5 @@ pub fn listdir(
     }
 
     dirs[@intCast(lev)] = 0;
-    c.free(path);
     return tot;
 }

@@ -12,13 +12,11 @@ pub fn printStdout(io: std.Io, content: []const u8) !void {
 }
 
 pub fn main(init: std.process.Init) !void {
-    const allocator = init.gpa;
     const args = try init.minimal.args.toSlice(init.arena.allocator());
-
     if (args.len == 2 and (std.mem.eql(u8, args[1], "man") or std.mem.eql(u8, args[1], "--man"))) {
         try printStdout(init.io, man.content);
         return;
     }
 
-    try tree.run(allocator, args, init.io, init.environ_map);
+    try tree.run(init, args);
 }
