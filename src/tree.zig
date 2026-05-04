@@ -453,7 +453,10 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
 // Split out stat portion from read_dir as prelude to just using stat structure directly.
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (getinfo_lbuf.len == 0) {
-        getinfo_lbuf = util.gpa.alloc(u8, std.fs.max_path_bytes) catch return null;
+        getinfo_lbuf = util.gpa.alloc(u8, std.fs.max_path_bytes) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
     }
 
     var ent_storage: types.Info = std.mem.zeroes(types.Info);
@@ -511,7 +514,10 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (flag.d and ((st_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR))) return null;
 
     // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
-    const ent: *types.Info = util.gpa.create(types.Info) catch return null;
+    const ent: *types.Info = util.gpa.create(types.Info) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
     ent.* = std.mem.zeroes(types.Info);
 
     ent.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
