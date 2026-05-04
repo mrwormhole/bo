@@ -523,8 +523,8 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     ent.* = std.mem.zeroes(types.Info);
 
     ent.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
-        freeInfo(ent);
-        return null;
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
     }).ptr;
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
@@ -766,8 +766,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     const sav_alloc: usize = @intCast(n + 1);
     pathsize = std.fs.max_path_bytes;
     path_buf = util.gpa.alloc(u8, pathsize) catch {
-        freeDir(sav);
-        return null;
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
     };
     path = path_buf.ptr;
 
