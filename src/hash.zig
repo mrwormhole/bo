@@ -26,7 +26,7 @@ pub fn uidtoname(uid: Uid) [*:0]const u8 {
     const name: [:0]const u8 = blk: {
         if (pw) |p| {
             if (p.name) |n| {
-                break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+                break :blk allocator.dupeSentinel(u8, std.mem.span(n), 0) catch unreachable;
             }
         }
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{uid}, 0) catch unreachable;
@@ -44,7 +44,7 @@ pub fn gidtoname(gid: Gid) [*:0]const u8 {
     const name: [:0]const u8 = blk: {
         if (gr) |g| {
             if (g.name) |n| {
-                break :blk allocator.dupeZ(u8, std.mem.span(n)) catch unreachable;
+                break :blk allocator.dupeSentinel(u8, std.mem.span(n), 0) catch unreachable;
             }
         }
         break :blk std.fmt.allocPrintSentinel(allocator, "{d}", .{gid}, 0) catch unreachable;
