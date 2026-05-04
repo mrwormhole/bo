@@ -711,6 +711,13 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     var n: isize = undefined;
     var tmp_pattern: c_int = 0;
 
+    defer {
+        if (tmp_pattern != 0) pattern = tmp_pattern;
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
+        if (path_buf.len > 0) util.gpa.free(path_buf);
+    }
+
     err.* = null;
     if (Level >= 0 and lev > @as(c_ulong, @intCast(Level))) return null;
     if (flag.xdev and lev == 0) {
@@ -738,24 +745,15 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
 
     if (dir_ptr == null and n != 0) {
         err.* = if (util.gpa.dupeSentinel(u8, "error opening dir", 0)) |s| s.ptr else |_| null;
-        if (ig != null) _ = filter.pop_filterstack();
-        if (inf != null) _ = info_mod.pop_infostack();
-        if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     if (n == 0) {
         if (sav != null) freeDir(sav);
-        if (ig != null) _ = filter.pop_filterstack();
-        if (inf != null) _ = info_mod.pop_infostack();
-        if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
     pathsize = std.fs.max_path_bytes;
     path_buf = util.gpa.alloc(u8, pathsize) catch {
         freeDir(sav);
-        if (ig != null) _ = filter.pop_filterstack();
-        if (inf != null) _ = info_mod.pop_infostack();
-        if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     };
     path = path_buf.ptr;
@@ -764,19 +762,11 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
         err.* = if (util.gpa.dupeSentinel(u8, c.strSpan(path), 0)) |s| s.ptr else |_| null;
         freeDir(sav);
-        util.gpa.free(path_buf);
-        if (ig != null) _ = filter.pop_filterstack();
-        if (inf != null) _ = info_mod.pop_infostack();
-        if (tmp_pattern != 0) pattern = tmp_pattern;
         return null;
     }
 
     if (lev >= maxdirs - 1) {
         const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch {
-            if (tmp_pattern != 0) pattern = tmp_pattern;
-            if (ig != null) _ = filter.pop_filterstack();
-            if (inf != null) _ = info_mod.pop_infostack();
-            util.gpa.free(path_buf);
             freeDir(sav);
             return null;
         };
@@ -800,10 +790,6 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
                                 path_buf = util.gpa.realloc(path_buf, pathsize) catch {
-                                    if (tmp_pattern != 0) pattern = tmp_pattern;
-                                    if (ig != null) _ = filter.pop_filterstack();
-                                    if (inf != null) _ = info_mod.pop_infostack();
-                                    util.gpa.free(path_buf);
                                     freeDir(sav);
                                     return null;
                                 };
@@ -824,10 +810,6 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
                     path_buf = util.gpa.realloc(path_buf, pathsize) catch {
-                        if (tmp_pattern != 0) pattern = tmp_pattern;
-                        if (ig != null) _ = filter.pop_filterstack();
-                        if (inf != null) _ = info_mod.pop_infostack();
-                        util.gpa.free(path_buf);
                         freeDir(sav);
                         return null;
                     };
@@ -876,23 +858,15 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         dir_ptr += 1;
     }
 
-    if (tmp_pattern != 0) {
-        pattern = tmp_pattern;
-        tmp_pattern = 0;
-    }
-
     // sorting needs to be deferred for --du:
     if (list.topsort != null) {
         std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
-    util.gpa.free(path_buf);
     if (n == 0) {
         freeDir(sav);
         return null;
     }
-    if (ig != null) _ = filter.pop_filterstack();
-    if (inf != null) _ = info_mod.pop_infostack();
     return sav;
 }
 
