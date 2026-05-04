@@ -523,7 +523,7 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     ent.* = std.mem.zeroes(types.Info);
 
     ent.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
-        util.gpa.destroy(ent);
+        freeInfo(ent);
         return null;
     }).ptr;
     ent.mode = ent_storage.mode;
@@ -559,23 +559,23 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
         const lst_size: usize = @intCast(ent_storage.size);
         if (lst_size + 1 > getinfo_lbuf.len) {
             getinfo_lbuf = util.gpa.realloc(getinfo_lbuf, lst_size + 8192) catch {
-                freeInfo(ent);
-                return null;
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
             };
         }
         const len: isize = c.readlink(path, getinfo_lbuf.ptr, getinfo_lbuf.len - 1);
         if (len < 0) {
             ent.lnk = (util.gpa.dupeSentinel(u8, "[Error reading symbolic link information]", 0) catch {
-                freeInfo(ent);
-                return null;
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
             }).ptr;
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
             ent.lnk = (util.gpa.dupeSentinel(u8, getinfo_lbuf[0..@intCast(len)], 0) catch {
-                freeInfo(ent);
-                return null;
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
             }).ptr;
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
@@ -590,8 +590,8 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     if (read_dir_path.len == 0) {
         read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch {
-            n.* = -1;
-            return null;
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
         };
     }
 
@@ -848,7 +848,10 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         const child = entry.child;
                         var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
-                        const new_name_copy = util.gpa.dupeSentinel(u8, c.strSpan(new_name), 0) catch break;
+                        const new_name_copy = util.gpa.dupeSentinel(u8, c.strSpan(new_name), 0) catch {
+                            std.debug.print("tree: virtual memory exhausted.\n", .{});
+                            std.process.exit(1);
+                        };
                         util.gpa.free(@constCast(c.strSpan(entry.name)));
                         entry.name = new_name_copy.ptr;
                         entry.child = child[0].?.child;
