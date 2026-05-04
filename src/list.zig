@@ -139,6 +139,10 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
             if (needfulltree) {
                 dir = getfulltree(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
+                if (err != null) {
+                    util.gpa.free(@constCast(c.strSpan(err)));
+                    err = null;
+                }
             } else {
                 filter.pushFiles(dirname[i], &ig, &inf, true);
                 dir = read_dir(dirname[i], &n, @intFromBool(inf != null));
