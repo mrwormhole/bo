@@ -106,12 +106,17 @@ pub fn scopy(s: [*c]const u8) [*c]u8 {
     return dst;
 }
 
+// Global variables are not ideal but this is temporarily necessary to avoid a giant diff
 pub var io: std.Io = undefined;
 pub var file: std.Io.File = undefined;
+pub var gpa: std.mem.Allocator = undefined;
+pub var arena: std.mem.Allocator = undefined;
 
-pub fn init(new_io: std.Io, new_file: std.Io.File) void {
+pub fn init(new_io: std.Io, new_file: std.Io.File, new_gpa: std.mem.Allocator, new_arena: std.mem.Allocator) void {
     io = new_io;
     file = new_file;
+    gpa = new_gpa;
+    arena = new_arena;
 }
 
 pub fn writer(buffer: []u8) std.Io.File.Writer {

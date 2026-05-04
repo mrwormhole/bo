@@ -8,6 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build (debug)
 zig build
 
+# Build on Arch Linux (force LLVM + LLD to avoid new glibc system linker relocation issues)
+zig build -Duse-llvm=true -Duse-lld=true
+
+# Recommended for all Linux distros
+zig build -Dtarget=x86_64-linux-musl
+
 # Build with optimization
 zig build -Doptimize=ReleaseFast
 

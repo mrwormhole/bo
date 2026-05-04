@@ -3,15 +3,17 @@ const std = @import("std");
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const use_llvm = b.option(bool, "use-llvm", "Use LLVM as the codegen backend");
+    const use_lld = b.option(bool, "use-lld", "Use LLD as the linker");
 
-    const exe = createExecutable(b, target, optimize);
+    const exe = createExecutable(b, target, optimize, use_llvm, use_lld);
     b.installArtifact(exe);
 
     makeRunStep(b, exe);
     makeTestStep(b, target, optimize);
 }
 
-fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode) *std.Build.Step.Compile {
+fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: std.builtin.OptimizeMode, use_llvm: ?bool, use_lld: ?bool) *std.Build.Step.Compile {
     const exe = b.addExecutable(.{
         .name = "bo",
         .root_module = b.createModule(.{
@@ -21,6 +23,8 @@ fn createExecutable(b: *std.Build, target: std.Build.ResolvedTarget, optimize: s
         }),
     });
 
+    exe.use_llvm = use_llvm;
+    exe.use_lld = use_lld;
     exe.root_module.linkSystemLibrary("c", .{});
 
     return exe;

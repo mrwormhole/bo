@@ -862,27 +862,30 @@ pub const RunError = std.mem.Allocator.Error || error{
     TreeHadErrors,
 };
 
-pub fn run(gpa: std.mem.Allocator, args: []const [:0]const u8, io: std.Io, environ: *std.process.Environ.Map) RunError!void {
-    var argv_buf = try gpa.alloc([*c]u8, args.len + 1);
-    defer gpa.free(argv_buf);
+pub fn run(init: std.process.Init, args: []const [:0]const u8) RunError!void {
+    var argv_buf = try init.gpa.alloc([*c]u8, args.len + 1);
+    defer init.gpa.free(argv_buf);
 
     for (args, 0..) |arg, arg_i| {
         argv_buf[arg_i] = @constCast(arg.ptr);
     }
     argv_buf[args.len] = null;
 
-    try runWithArgv(gpa, argv_buf[0..args.len :null], io, environ);
+    try runWithArgv(init, argv_buf[0..args.len :null]);
 }
 
-fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, environ: *std.process.Environ.Map) RunError!void {
+fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void {
     const argc = argv_slice.len;
     const argv: [*c][*c]u8 = argv_slice.ptr;
 
     list.getfulltree = &unix_getfulltree;
     list.basesort = &alnumsort;
     list.topsort = null;
-    util.init(io, std.Io.File.stdout());
     var dirname: [*c][*c]u8 = null;
+
+    const environ = init.environ_map;
+    util.init(init.io, std.Io.File.stdout(), init.gpa, init.arena.allocator());
+    const gpa = util.gpa;
 
     var patterns_list = try std.ArrayList([*c]u8).initCapacity(gpa, 16);
     var ipatterns_list = try std.ArrayList([*c]u8).initCapacity(gpa, 16);
@@ -1385,7 +1388,7 @@ fn runWithArgv(gpa: std.mem.Allocator, argv_slice: [:null][*c]u8, io: std.Io, en
 
     needfulltree = flag.du or flag.prune or flag.matchdirs or flag.fromfile or flag.condense_singletons;
 
-    emit_tree(lc, dirname, needfulltree);
+    try emit_tree(lc, dirname, needfulltree);
 
     if (outfilename != null) util.file.close(util.io);
 
