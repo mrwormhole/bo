@@ -602,13 +602,10 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 
     const dir_entry_initial_cap: usize = 30;
     const dir_entry_grow_step: usize = 20;
-    var ne: usize = dir_entry_initial_cap;
-    var dl_buf = util.gpa.alloc(?*types.Info, ne) catch {
-        _ = c.closedir(@ptrCast(d));
-        n.* = -1;
-        return null;
+    var dl_buf = std.ArrayList(?*types.Info).initCapacity(util.gpa, dir_entry_initial_cap) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
     };
-    var p: usize = 0;
 
     while (true) {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
@@ -662,31 +659,32 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 }
                 inf.comment[cnt] = null;
             }
-            if (p == (ne - 1)) {
-                dl_buf = util.gpa.realloc(dl_buf, ne + dir_entry_grow_step) catch {
+            if (dl_buf.items.len == dl_buf.capacity) {
+                dl_buf.ensureTotalCapacityPrecise(util.gpa, dl_buf.capacity + dir_entry_grow_step) catch {
                     std.debug.print("tree: virtual memory exhausted.\n", .{});
                     std.process.exit(1);
                 };
-                ne += dir_entry_grow_step;
             }
-            dl_buf[p] = inf;
-            p += 1;
+            dl_buf.appendAssumeCapacity(inf);
         }
     }
     _ = c.closedir(@ptrCast(d));
 
-    n.* = @intCast(p);
+    n.* = @intCast(dl_buf.items.len);
     if (n.* == 0) {
-        util.gpa.free(dl_buf);
+        dl_buf.deinit(util.gpa);
         return null;
     }
 
-    dl_buf[p] = null;
-    dl_buf = util.gpa.realloc(dl_buf, p + 1) catch {
+    dl_buf.append(util.gpa, null) catch {
         std.debug.print("tree: virtual memory exhausted.\n", .{});
         std.process.exit(1);
     };
-    return dl_buf.ptr;
+    const owned = dl_buf.toOwnedSlice(util.gpa) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    return owned.ptr;
 }
 
 // Shrinks the sav allocation to match the current sentinel position after pruning,
