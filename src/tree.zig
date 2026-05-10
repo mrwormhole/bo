@@ -622,13 +622,8 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
         const elen = c.strLen(dname);
         if (dlen + elen + 2 > read_dir_path.len) {
             read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch {
-                for (dl_buf[0..p]) |maybe_inf| {
-                    if (maybe_inf) |entry| freeInfo(entry);
-                }
-                util.gpa.free(dl_buf);
-                _ = c.closedir(@ptrCast(d));
-                n.* = -1;
-                return null;
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
             };
         }
         if (es) {
