@@ -608,7 +608,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     };
     var p: usize = 0;
 
-    outer: while (true) {
+    while (true) {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
         if (ent == null) break;
         const dname: [*c]const u8 = @ptrCast(&ent.?.d_name);
@@ -641,24 +641,26 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
             if (flag.showinfo) {
                 com = info_mod.infocheck(read_dir_path.ptr, dname, infotop, inf.isdir, flag.ignorecase);
             }
-            if (com != null) {
+            // .info comments are display-only annotations; losing them under
+            // memory pressure is acceptable — the entry itself must still appear
+            // in the tree rather than being silently dropped or aborting the walk.
+            comment: {
+                if (com == null) break :comment;
                 var cnt: usize = 0;
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch {
-                    freeInfo(inf);
-                    continue :outer;
-                };
+                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch break :comment;
                 inf.comment = comment_buf.ptr;
                 var ci: usize = 0;
                 while (ci < cnt) : (ci += 1) {
                     if (util.gpa.dupeSentinel(u8, c.strSpan(com.?.desc[ci]), 0)) |s| {
                         inf.comment[ci] = s.ptr;
                     } else |_| {
+                        // partial strings already copied; free them and drop the whole
+                        // annotation rather than showing a truncated comment
                         for (comment_buf[0..ci]) |s| util.gpa.free(@constCast(c.strSpan(s)));
                         util.gpa.free(comment_buf);
                         inf.comment = null;
-                        freeInfo(inf);
-                        continue :outer;
+                        break :comment;
                     }
                 }
                 inf.comment[cnt] = null;
