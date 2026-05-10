@@ -687,7 +687,6 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     return owned.ptr;
 }
 
-
 // This is for all the impossible things people wanted the old tree to do.
 // This can and will use a large amount of memory for large directory trees
 // and also take some time.
@@ -743,6 +742,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         if (sav != null) freeDir(sav);
         return null;
     }
+    const sav_alloc: usize = @intCast(n + 1);
     pathsize = std.fs.max_path_bytes;
     path_buf = util.gpa.alloc(u8, pathsize) catch {
         std.debug.print("tree: virtual memory exhausted.\n", .{});
@@ -856,6 +856,14 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
+    const sav_len: usize = @intCast(n + 1);
+    if (sav_len != sav_alloc) {
+        const shrunk = util.gpa.realloc(sav[0..sav_alloc], sav_len) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
+        sav = shrunk.ptr;
+    }
     if (n == 0) {
         freeDir(sav);
         return null;
