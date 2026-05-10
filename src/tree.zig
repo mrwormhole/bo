@@ -687,17 +687,6 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     return owned.ptr;
 }
 
-// Shrinks the sav allocation to match the current sentinel position after pruning,
-// so freeDir can reconstruct the correct slice length.
-fn compactSav(sav_ptr: *[*c]?*types.Info, n: isize, alloc: usize) void {
-    const need: usize = if (n > 0) @intCast(n + 1) else 1;
-    if (need >= alloc) return;
-    const new = util.gpa.realloc(sav_ptr.*[0..alloc], need) catch {
-        std.debug.print("tree: virtual memory exhausted.\n", .{});
-        std.process.exit(1);
-    };
-    sav_ptr.* = new.ptr;
-}
 
 // This is for all the impossible things people wanted the old tree to do.
 // This can and will use a large amount of memory for large directory trees
@@ -754,7 +743,6 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         if (sav != null) freeDir(sav);
         return null;
     }
-    const sav_alloc: usize = @intCast(n + 1);
     pathsize = std.fs.max_path_bytes;
     path_buf = util.gpa.alloc(u8, pathsize) catch {
         std.debug.print("tree: virtual memory exhausted.\n", .{});
@@ -763,15 +751,17 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     path = path_buf.ptr;
 
     if (flag.flimit > 0 and n > flag.flimit) {
-        err.* = if (util.gpa.dupeSentinel(u8, "too many entries", 0)) |s| s.ptr else |_| null;
+        var flimit_buf: [64]u8 = undefined;
+        const flimit_msg = std.fmt.bufPrint(&flimit_buf, "{d} entries exceeds filelimit, not opening dir", .{n}) catch unreachable;
+        err.* = if (util.gpa.dupeSentinel(u8, flimit_msg, 0)) |s| s.ptr else |_| null;
         freeDir(sav);
         return null;
     }
 
     if (lev >= maxdirs - 1) {
         const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch {
-            freeDir(sav);
-            return null;
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
         };
         dirs = new_dirs.ptr;
         maxdirs += 1024;
@@ -793,9 +783,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
                                 path_buf = util.gpa.realloc(path_buf, pathsize) catch {
-                                    compactSav(&sav, n, sav_alloc);
-                                    freeDir(sav);
-                                    return null;
+                                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                                    std.process.exit(1);
                                 };
                                 path = path_buf.ptr;
                             }
@@ -814,9 +803,8 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
                     path_buf = util.gpa.realloc(path_buf, pathsize) catch {
-                        compactSav(&sav, n, sav_alloc);
-                        freeDir(sav);
-                        return null;
+                        std.debug.print("tree: virtual memory exhausted.\n", .{});
+                        std.process.exit(1);
                     };
                     path = path_buf.ptr;
                 }
@@ -868,7 +856,6 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
-    compactSav(&sav, n, sav_alloc);
     if (n == 0) {
         freeDir(sav);
         return null;
