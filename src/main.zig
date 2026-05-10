@@ -18,5 +18,9 @@ pub fn main(init: std.process.Init) !void {
         return;
     }
 
-    try tree.run(init, args);
+    tree.run(init, args) catch |err| switch (err) {
+        error.InvalidArgument, error.InvalidOutputFile => std.process.exit(1),
+        error.TreeHadErrors => std.process.exit(2),
+        else => return err,
+    };
 }
