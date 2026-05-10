@@ -97,8 +97,6 @@ pub const CODESET: c_int = switch (builtin.os.tag) {
 
 pub const EXIT_FAILURE: c_int = 1;
 
-pub const MINIT: usize = 30; // Initial dir entry allocation
-pub const MINC: usize = 20; // Allocation increment
 pub const INFO_PATH: [*:0]const u8 = "/usr/share/finfo/global_info";
 
 const tm = opaque {};

@@ -600,7 +600,9 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
 
-    var ne: usize = c.MINIT;
+    const dir_entry_initial_cap: usize = 30;
+    const dir_entry_grow_step: usize = 20;
+    var ne: usize = dir_entry_initial_cap;
     var dl_buf = util.gpa.alloc(?*types.Info, ne) catch {
         _ = c.closedir(@ptrCast(d));
         n.* = -1;
@@ -666,17 +668,11 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
                 inf.comment[cnt] = null;
             }
             if (p == (ne - 1)) {
-                dl_buf = util.gpa.realloc(dl_buf, ne + c.MINC) catch {
-                    freeInfo(inf);
-                    for (dl_buf[0..p]) |maybe_inf| {
-                        if (maybe_inf) |entry| freeInfo(entry);
-                    }
-                    util.gpa.free(dl_buf);
-                    _ = c.closedir(@ptrCast(d));
-                    n.* = -1;
-                    return null;
+                dl_buf = util.gpa.realloc(dl_buf, ne + dir_entry_grow_step) catch {
+                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                    std.process.exit(1);
                 };
-                ne += c.MINC;
+                ne += dir_entry_grow_step;
             }
             dl_buf[p] = inf;
             p += 1;
@@ -953,6 +949,8 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
     list.basesort = &alnumsort;
     list.topsort = null;
     var dirname: [*c][*c]u8 = null;
+    const dirname_initial_cap: usize = 30;
+    const dirname_grow_step: usize = 20;
 
     const environ = init.environ_map;
     util.init(init.io, std.Io.File.stdout(), init.gpa, init.arena.allocator());
@@ -1407,11 +1405,11 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
-                q = c.MINIT;
+                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + dirname_initial_cap))));
+                q = dirname_initial_cap;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
-                q += c.MINC;
+                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + dirname_grow_step))));
+                q += dirname_grow_step;
             }
             dirname[p] = util.scopy(argv[i]);
             p += 1;
