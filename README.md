@@ -1,14 +1,14 @@
 # bo (The Bodhi Tree)
 
-[![Version](https://img.shields.io/github/tag/mrwormhole/bo.svg)](https://github.com/mrwormhole/bo/tags)
-[![CI](https://github.com/mrwormhole/bo/actions/workflows/main.yaml/badge.svg)](https://github.com/mrwormhole/bo/actions/workflows/main.yaml)
-[![License](https://img.shields.io/github/license/mrwormhole/bo)](https://github.com/mrwormhole/bo/blob/main/LICENSE)
+[![Version](https://img.shields.io/github/tag/occamist/bo.svg)](https://github.com/occamist/bo/tags)
+[![CI](https://github.com/occamist/bo/actions/workflows/main.yaml/badge.svg)](https://github.com/occamist/bo/actions/workflows/main.yaml)
+[![License](https://img.shields.io/github/license/occamist/bo)](https://github.com/occamist/bo/blob/main/LICENSE)
 
 This is a UNIX utility to display a tree view of directories. The original tree (written in C) can be found [here](http://oldmanprogrammer.net/source.php?dir=projects/tree)
 
 bo (The Bodhi Tree) is Zig (v0.16.0) version of this UNIX utility where C implementation is moved to Zig implementation gradually to make cross-platform dead easy and improve the safety without performance loss. It is also an educational project to test drive Zig. Everyone is welcome here via PRs
 
-You can grab the binary from [the releases here](https://github.com/mrwormhole/bo/releases)
+You can grab the binary from [the releases here](https://github.com/occamist/bo/releases)
 
 ## Build Your Own Binary
 
