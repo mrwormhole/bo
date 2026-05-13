@@ -21,6 +21,16 @@ pub fn new_pattern(pattern: [*c]u8) *types.Pattern {
     return p;
 }
 
+pub fn free_pattern_list(head: ?*types.Pattern) void {
+    var p = head;
+    while (p) |node| {
+        const next = node.next;
+        c.free(node.pattern);
+        c.free(node);
+        p = next;
+    }
+}
+
 // Patmatch() code courtesy of Thomas Moore (dark@mama.indstate.edu)
 // '|' support added by David MacMahon (davidm@astron.Berkeley.EDU)
 // Case insensitive support added by Jason A. Donenfeld (Jason@zx2c4.com)

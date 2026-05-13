@@ -66,6 +66,13 @@ pub fn selinux_context(path: [*c]const u8) [*c]u8 {
     var buf: [std.fs.max_path_bytes]u8 = undefined;
 
     const len: isize = xattr.getxattr(path, "security.selinux", &buf, std.fs.max_path_bytes - 1);
-    buf[@intCast(if (len < 0) 0 else len)] = 0;
-    return util.scopy(&buf);
+    const slen: usize = @intCast(if (len < 0) 0 else len);
+    buf[slen] = 0;
+    // getxattr returns raw bytes; security.selinux values carry a trailing NUL.
+    // Trim to the C-string prefix so the allocation length matches c.strSpan at free time.
+    const str = std.mem.sliceTo(buf[0..slen], 0);
+    return (util.gpa.dupeSentinel(u8, str, 0) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    }).ptr;
 }

@@ -163,20 +163,8 @@ pub fn pop_filterstack() ?*types.IgnoreFile {
     const ig = filterstack orelse return null;
     filterstack = ig.next;
 
-    // Note: original C frees pattern->pattern (the string) but never the
-    // pattern struct nodes themselves — preserved verbatim.
-    var pp: ?*types.Pattern = ig.remove;
-    while (pp != null) {
-        const cur = pp.?;
-        pp = cur.next;
-        c.free(cur.pattern);
-    }
-    pp = ig.reverse;
-    while (pp != null) {
-        const cur = pp.?;
-        pp = cur.next;
-        c.free(cur.pattern);
-    }
+    pat.free_pattern_list(ig.remove);
+    pat.free_pattern_list(ig.reverse);
     c.free(ig.path);
     c.free(ig);
     return null;

@@ -120,15 +120,14 @@ def build_fixture(root: str) -> None:
         fh.write(gitignore_body)
 
 
-def run(cmd: list[str], env: dict[str, str] | None = None) -> str:
+def run(cmd: list[str], env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
     # Decode as latin-1 so non-UTF-8 charset output (e.g. Big5, KOI8-R) round-trips
     # through .replace()/splitlines() byte-identically instead of raising.
     full_env = None
     if env is not None:
         full_env = os.environ.copy()
         full_env.update(env)
-    result = subprocess.run(cmd, capture_output=True, env=full_env)
-    return result.stdout.decode("latin-1")
+    return subprocess.run(cmd, capture_output=True, env=full_env, encoding="latin-1")
 
 
 # Each entry: (description, extra_flags, indent_insensitive)
@@ -216,7 +215,24 @@ EDGE_CASES = [
     ("trailing slash root",  lambda t: ["--noreport", t + "/"],                   False),
     ("multiple roots",       lambda t: ["--noreport", t, t],                      False),
     ("filelimit triggers",   lambda t: ["--noreport", "--filelimit", "2", t],     False),
+    # Full-tree paths allocate a complete directory array before listing. These
+    # cases prune or reshape that array, then free it, which catches allocator
+    # ownership bugs that stdout-only comparisons can miss.
+    ("prune pattern match",  lambda t: ["--noreport", "--prune", "-P", "c1.txt", t], False),
+    ("prune + dirsfirst",    lambda t: ["--noreport", "--prune", "--dirsfirst", "-P", "c1.txt", t], False),
+    ("du + prune",           lambda t: ["--noreport", "--du", "--prune", "-P", "c1.txt", t], False),
+    ("matchdirs + prune",    lambda t: ["--noreport", "--matchdirs", "--prune", "-P", "b", t], False),
+    ("condense + prune",     lambda t: ["--noreport", "--condense", "--prune", "-P", "c1.txt", t], False),
+    ("du filelimit",         lambda t: ["--noreport", "--du", "--filelimit", "2", t], False),
     ("nonexistent path",     lambda t: ["--noreport", "/__bo_no_such_dir__"],     False),
+    ("multiple nonexistent paths",
+     lambda t: [
+         "--noreport",
+         "/__bo_no_such_dir_a__",
+         "/__bo_no_such_dir_b__",
+         "/__bo_no_such_dir_c__",
+     ],
+     False),
     ("JSON nonexistent",     lambda t: ["--noreport", "-J", "/__bo_no_such_dir__"], True),
 ]
 
@@ -244,18 +260,24 @@ def strip_indent(output: str) -> str:
 def compare(desc: str, tree_args: list[str], bo_args: list[str], tmp: str,
             indent_insensitive: bool, tree_bin: str, bo_bin: str,
             env: dict[str, str] | None = None) -> bool:
-    tree_out = run([tree_bin, *tree_args], env=env).replace(tmp, "<ROOT>")
-    bo_out   = run([bo_bin,   *bo_args],   env=env).replace(tmp, "<ROOT>")
+    tree_result = run([tree_bin, *tree_args], env=env)
+    bo_result   = run([bo_bin,   *bo_args],   env=env)
+
+    tree_out = tree_result.stdout.replace(tmp, "<ROOT>")
+    bo_out   = bo_result.stdout.replace(tmp, "<ROOT>")
 
     if indent_insensitive:
         tree_out = strip_indent(tree_out)
         bo_out   = strip_indent(bo_out)
 
-    if tree_out == bo_out:
+    if tree_result.returncode == bo_result.returncode and tree_out == bo_out:
         print(f"  {PASS}  {desc}")
         return True
 
     print(f"  {FAIL}  {desc}")
+    if tree_result.returncode != bo_result.returncode:
+        print(f"    !! tree exit: {tree_result.returncode}")
+        print(f"    !!   bo exit: {bo_result.returncode}")
     tree_lines = tree_out.splitlines()
     bo_lines   = bo_out.splitlines()
     for i in range(max(len(tree_lines), len(bo_lines))):
@@ -264,6 +286,15 @@ def compare(desc: str, tree_args: list[str], bo_args: list[str], tmp: str,
         marker = "  " if tl == bl else "!!"
         print(f"    {marker} tree: {repr(tl)}")
         print(f"    {marker}   bo: {repr(bl)}")
+    if tree_result.stderr or bo_result.stderr:
+        tree_err = tree_result.stderr.replace(tmp, "<ROOT>").splitlines()
+        bo_err = bo_result.stderr.replace(tmp, "<ROOT>").splitlines()
+        for i in range(max(len(tree_err), len(bo_err))):
+            tl = tree_err[i] if i < len(tree_err) else "<missing>"
+            bl = bo_err[i] if i < len(bo_err) else "<missing>"
+            marker = "  " if tl == bl else "!!"
+            print(f"    {marker} tree stderr: {repr(tl)}")
+            print(f"    {marker}   bo stderr: {repr(bl)}")
     return False
 
 

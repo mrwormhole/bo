@@ -1,5 +1,6 @@
 # Ignore the things we would normally "clean":
 *.o
+tree.c
 tree
 bo
 *~
@@ -8,3 +9,11 @@ bo
 # Zig build artifacts
 .zig-cache/
 zig-out/
+
+# Agent/AI tooling
+.agents/
+.citadel/
+.claude/
+.codex/
+.codex-plugin/
+.planning/

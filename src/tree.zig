@@ -16,6 +16,8 @@ const html = @import("html.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
 const file_mod = @import("file.zig");
+const freeInfo = info_mod.freeInfo;
+const freeDir = info_mod.freeDir;
 const util = @import("util.zig");
 const hash = @import("hash.zig");
 const help = @import("help.zig");
@@ -130,10 +132,8 @@ fn getMbCurMax() c_int {
 // ---------------------------------------------------------------------------
 var prot_buf: [11]u8 = undefined;
 var do_date_buf: [256]u8 = undefined;
-var getinfo_lbuf: [*c]u8 = null;
-var getinfo_lbufsize: usize = 0;
-var read_dir_path: [*c]u8 = null;
-var read_dir_pathsize: usize = 0;
+var getinfo_lbuf: []u8 = &.{};
+var read_dir_path: []u8 = &.{};
 
 // ---------------------------------------------------------------------------
 // Exported formatting helpers
@@ -454,9 +454,11 @@ fn doLstatInfo(path: [*c]const u8, ent: *types.Info) bool {
 
 // Split out stat portion from read_dir as prelude to just using stat structure directly.
 fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
-    if (getinfo_lbuf == null) {
-        getinfo_lbufsize = std.fs.max_path_bytes;
-        getinfo_lbuf = @ptrCast(util.xmalloc(getinfo_lbufsize));
+    if (getinfo_lbuf.len == 0) {
+        getinfo_lbuf = util.gpa.alloc(u8, std.fs.max_path_bytes) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
     }
 
     var ent_storage: types.Info = std.mem.zeroes(types.Info);
@@ -514,10 +516,16 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     if (flag.d and ((st_mode & std.posix.S.IFMT) != @as(c.mode_t, std.posix.S.IFDIR))) return null;
 
     // if (pattern && ((lst.st_mode & S_IFMT) == S_IFLNK) && !lflag) continue;
-    const ent: *types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(types.Info))));
-    @memset(@as([*]u8, @ptrCast(ent))[0..@sizeOf(types.Info)], 0);
+    const ent: *types.Info = util.gpa.create(types.Info) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    ent.* = std.mem.zeroes(types.Info);
 
-    ent.name = util.scopy(name);
+    ent.name = (util.gpa.dupeSentinel(u8, c.strSpan(name), 0) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    }).ptr;
     ent.mode = ent_storage.mode;
     ent.uid = ent_storage.uid;
     ent.gid = ent_storage.gid;
@@ -549,18 +557,26 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
 
     if ((lst_mode & std.posix.S.IFMT) == @as(c.mode_t, std.posix.S.IFLNK)) {
         const lst_size: usize = @intCast(ent_storage.size);
-        if (lst_size + 1 > getinfo_lbufsize) {
-            getinfo_lbufsize = lst_size + 8192;
-            getinfo_lbuf = @ptrCast(util.xrealloc(getinfo_lbuf, getinfo_lbufsize));
+        if (lst_size + 1 > getinfo_lbuf.len) {
+            getinfo_lbuf = util.gpa.realloc(getinfo_lbuf, lst_size + 8192) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            };
         }
-        const len: isize = c.readlink(path, getinfo_lbuf, getinfo_lbufsize - 1);
+        const len: isize = c.readlink(path, getinfo_lbuf.ptr, getinfo_lbuf.len - 1);
         if (len < 0) {
-            ent.lnk = util.scopy("[Error reading symbolic link information]");
+            ent.lnk = (util.gpa.dupeSentinel(u8, "[Error reading symbolic link information]", 0) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            }).ptr;
             ent.isdir = false;
             ent.lnkmode = @intCast(st_mode);
         } else {
             getinfo_lbuf[@intCast(len)] = 0;
-            ent.lnk = util.scopy(getinfo_lbuf);
+            ent.lnk = (util.gpa.dupeSentinel(u8, getinfo_lbuf[0..@intCast(len)], 0) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            }).ptr;
             if (rs < 0) ent.orphan = true;
             ent.lnkmode = @intCast(st_mode);
         }
@@ -571,28 +587,12 @@ fn getinfo(name: [*c]const u8, path: [*c]u8) ?*types.Info {
     return ent;
 }
 
-export fn free_dir(d: [*c]?*types.Info) void {
-    var i: usize = 0;
-    while (d[i]) |entry| : (i += 1) {
-        c.free(entry.name);
-        if (entry.lnk != null) c.free(entry.lnk);
-        if (comptime builtin.os.tag == .linux) {
-            if (entry.secontext != null) c.free(entry.secontext);
-        }
-        if (entry.comment != null) {
-            var j: usize = 0;
-            while (entry.comment[j] != null) : (j += 1) c.free(entry.comment[j]);
-        }
-        if (entry.err != null) c.free(entry.err);
-        c.free(@ptrCast(entry));
-    }
-    c.free(@ptrCast(d));
-}
-
 export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
-    if (read_dir_path == null) {
-        read_dir_pathsize = c.strLen(dir) + std.fs.max_path_bytes;
-        read_dir_path = @ptrCast(util.xmalloc(read_dir_pathsize));
+    if (read_dir_path.len == 0) {
+        read_dir_path = util.gpa.alloc(u8, c.strLen(dir) + std.fs.max_path_bytes) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
     }
 
     const es: bool = dir[c.strLen(dir) - 1] == std.fs.path.sep;
@@ -600,9 +600,12 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
     const d: ?*c.DIR = c.opendir(dir);
     if (d == null) return null;
 
-    var ne: usize = c.MINIT;
-    var dl: [*c]?*types.Info = @ptrCast(@alignCast(util.xmalloc(@sizeOf(?*types.Info) * ne)));
-    var p: usize = 0;
+    const dir_entry_initial_cap: usize = 30;
+    const dir_entry_grow_step: usize = 20;
+    var dl_buf = std.ArrayList(?*types.Info).initCapacity(util.gpa, dir_entry_initial_cap) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
 
     while (true) {
         const ent: ?*c.struct_dirent = @ptrCast(c.readdir(@ptrCast(d)));
@@ -614,48 +617,74 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 
         const dlen = c.strLen(dir);
         const elen = c.strLen(dname);
-        if (dlen + elen + 2 > read_dir_pathsize) {
-            read_dir_pathsize = dlen + elen + std.fs.max_path_bytes;
-            read_dir_path = @ptrCast(util.xrealloc(read_dir_path, read_dir_pathsize));
+        if (dlen + elen + 2 > read_dir_path.len) {
+            read_dir_path = util.gpa.realloc(read_dir_path, dlen + elen + std.fs.max_path_bytes) catch {
+                std.debug.print("tree: virtual memory exhausted.\n", .{});
+                std.process.exit(1);
+            };
         }
         if (es) {
-            _ = c.sprintf(read_dir_path, "%s%s", dir, dname);
+            _ = c.sprintf(read_dir_path.ptr, "%s%s", dir, dname);
         } else {
-            _ = c.sprintf(read_dir_path, "%s/%s", dir, dname);
+            _ = c.sprintf(read_dir_path.ptr, "%s/%s", dir, dname);
         }
 
-        const info = getinfo(dname, read_dir_path);
+        const info = getinfo(dname, read_dir_path.ptr);
         if (info) |inf| {
             var com: ?*types.Comment = null;
             if (flag.showinfo) {
-                com = info_mod.infocheck(read_dir_path, dname, infotop, inf.isdir, flag.ignorecase);
+                com = info_mod.infocheck(read_dir_path.ptr, dname, infotop, inf.isdir, flag.ignorecase);
             }
-            if (com != null) {
+            // .info comments are display-only annotations; losing them under
+            // memory pressure is acceptable — the entry itself must still appear
+            // in the tree rather than being silently dropped or aborting the walk.
+            comment: {
+                if (com == null) break :comment;
                 var cnt: usize = 0;
                 while (com.?.desc[cnt] != null) : (cnt += 1) {}
-                inf.comment = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (cnt + 1))));
+                const comment_buf = util.gpa.alloc([*c]u8, cnt + 1) catch break :comment;
+                inf.comment = comment_buf.ptr;
                 var ci: usize = 0;
-                while (ci < cnt) : (ci += 1) inf.comment[ci] = util.scopy(com.?.desc[ci]);
+                while (ci < cnt) : (ci += 1) {
+                    if (util.gpa.dupeSentinel(u8, c.strSpan(com.?.desc[ci]), 0)) |s| {
+                        inf.comment[ci] = s.ptr;
+                    } else |_| {
+                        // partial strings already copied; free them and drop the whole
+                        // annotation rather than showing a truncated comment
+                        for (comment_buf[0..ci]) |s| util.gpa.free(@constCast(c.strSpan(s)));
+                        util.gpa.free(comment_buf);
+                        inf.comment = null;
+                        break :comment;
+                    }
+                }
                 inf.comment[cnt] = null;
             }
-            if (p == (ne - 1)) {
-                dl = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dl), @sizeOf(?*types.Info) * (ne + c.MINC))));
-                ne += c.MINC;
+            if (dl_buf.items.len == dl_buf.capacity) {
+                dl_buf.ensureTotalCapacityPrecise(util.gpa, dl_buf.capacity + dir_entry_grow_step) catch {
+                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                    std.process.exit(1);
+                };
             }
-            dl[p] = inf;
-            p += 1;
+            dl_buf.appendAssumeCapacity(inf);
         }
     }
     _ = c.closedir(@ptrCast(d));
 
-    n.* = @intCast(p);
+    n.* = @intCast(dl_buf.items.len);
     if (n.* == 0) {
-        c.free(@ptrCast(dl));
+        dl_buf.deinit(util.gpa);
         return null;
     }
 
-    dl[p] = null;
-    return dl;
+    dl_buf.append(util.gpa, null) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    const owned = dl_buf.toOwnedSlice(util.gpa) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    return owned.ptr;
 }
 
 // This is for all the impossible things people wanted the old tree to do.
@@ -664,6 +693,7 @@ export fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info {
 fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, err: [*c][*c]u8) [*c]?*types.Info {
     var dev: c.dev_t = dev_in;
     var path: [*c]u8 = undefined;
+    var path_buf: []u8 = &.{};
     var pathsize: usize = 0;
     var ig: ?*types.IgnoreFile = null;
     var inf: ?*types.InfoFile = null;
@@ -671,6 +701,13 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     var dir_ptr: [*c]?*types.Info = undefined;
     var n: isize = undefined;
     var tmp_pattern: c_int = 0;
+
+    defer {
+        if (tmp_pattern != 0) pattern = tmp_pattern;
+        if (ig != null) _ = filter.pop_filterstack();
+        if (inf != null) _ = info_mod.pop_infostack();
+        if (path_buf.len > 0) util.gpa.free(path_buf);
+    }
 
     err.* = null;
     if (Level >= 0 and lev > @as(c_ulong, @intCast(Level))) return null;
@@ -698,29 +735,35 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
     dir_ptr = sav;
 
     if (dir_ptr == null and n != 0) {
-        err.* = util.scopy("error opening dir");
-        if (tmp_pattern != 0) pattern = tmp_pattern;
+        err.* = if (util.gpa.dupeSentinel(u8, "error opening dir", 0)) |s| s.ptr else |_| null;
         return null;
     }
     if (n == 0) {
-        if (sav != null) free_dir(sav);
-        if (tmp_pattern != 0) pattern = tmp_pattern;
+        if (sav != null) freeDir(sav);
         return null;
     }
+    const sav_alloc: usize = @intCast(n + 1);
     pathsize = std.fs.max_path_bytes;
-    path = @ptrCast(util.xmalloc(pathsize));
+    path_buf = util.gpa.alloc(u8, pathsize) catch {
+        std.debug.print("tree: virtual memory exhausted.\n", .{});
+        std.process.exit(1);
+    };
+    path = path_buf.ptr;
 
     if (flag.flimit > 0 and n > flag.flimit) {
-        _ = c.sprintf(path, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
-        err.* = util.scopy(path);
-        free_dir(sav);
-        c.free(path);
-        if (tmp_pattern != 0) pattern = tmp_pattern;
+        var flimit_buf: [64]u8 = undefined;
+        const flimit_msg = std.fmt.bufPrint(&flimit_buf, "{d} entries exceeds filelimit, not opening dir", .{n}) catch unreachable;
+        err.* = if (util.gpa.dupeSentinel(u8, flimit_msg, 0)) |s| s.ptr else |_| null;
+        freeDir(sav);
         return null;
     }
 
     if (lev >= maxdirs - 1) {
-        dirs = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirs), @sizeOf(c_int) * (maxdirs + 1024))));
+        const new_dirs = util.gpa.realloc(dirs[0..maxdirs], maxdirs + 1024) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
+        dirs = new_dirs.ptr;
         maxdirs += 1024;
     }
 
@@ -729,7 +772,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
             if (entry.lnk != null) {
                 if (flag.l) {
                     if (hash.findino(@intCast(entry.inode), @intCast(entry.dev))) {
-                        entry.err = util.scopy("recursive, not followed");
+                        entry.err = if (util.gpa.dupeSentinel(u8, "recursive, not followed", 0)) |s| s.ptr else |_| null;
                     } else {
                         hash.saveino(@intCast(entry.inode), @intCast(entry.dev));
                         if (entry.lnk[0] == std.fs.path.sep) {
@@ -739,7 +782,11 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                             const llen = c.strLen(entry.lnk);
                             if (dlen + llen + 2 > pathsize) {
                                 pathsize = dlen + llen + 1024;
-                                path = @ptrCast(util.xrealloc(path, pathsize));
+                                path_buf = util.gpa.realloc(path_buf, pathsize) catch {
+                                    std.debug.print("tree: virtual memory exhausted.\n", .{});
+                                    std.process.exit(1);
+                                };
+                                path = path_buf.ptr;
                             }
                             if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
                                 _ = c.sprintf(path, "%s%s", d, entry.lnk);
@@ -755,7 +802,11 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 const nlen = c.strLen(entry.name);
                 if (dlen + nlen + 2 > pathsize) {
                     pathsize = dlen + nlen + 1024;
-                    path = @ptrCast(util.xrealloc(path, pathsize));
+                    path_buf = util.gpa.realloc(path_buf, pathsize) catch {
+                        std.debug.print("tree: virtual memory exhausted.\n", .{});
+                        std.process.exit(1);
+                    };
+                    path = path_buf.ptr;
                 }
 
                 if (flag.f and std.mem.eql(u8, c.strSpan(d), "/")) {
@@ -772,11 +823,15 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                         const child = entry.child;
                         var segs = [_][*c]u8{ entry.name, child[0].?.name };
                         const new_name = util.pathconcat(@ptrCast(&segs), 2);
-                        c.free(entry.name);
-                        entry.name = util.scopy(new_name);
+                        const new_name_copy = util.gpa.dupeSentinel(u8, c.strSpan(new_name), 0) catch {
+                            std.debug.print("tree: virtual memory exhausted.\n", .{});
+                            std.process.exit(1);
+                        };
+                        util.gpa.free(@constCast(c.strSpan(entry.name)));
+                        entry.name = new_name_copy.ptr;
                         entry.child = child[0].?.child;
                         entry.condensed = entry.condensed + 1 + child[0].?.condensed;
-                        free_dir(child);
+                        freeDir(child);
                     }
                 }
             }
@@ -788,9 +843,7 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
                 var p: [*c]?*types.Info = dir_ptr;
                 while (p.* != null) : (p += 1) p.* = (p + 1).*;
                 n -= 1;
-                c.free(xp.name);
-                if (xp.lnk != null) c.free(xp.lnk);
-                c.free(@ptrCast(xp));
+                freeInfo(xp);
                 continue;
             }
         }
@@ -798,23 +851,23 @@ fn unix_getfulltree(d: [*c]u8, lev: c_ulong, dev_in: c.dev_t, size: *c.off_t, er
         dir_ptr += 1;
     }
 
-    if (tmp_pattern != 0) {
-        pattern = tmp_pattern;
-        tmp_pattern = 0;
-    }
-
     // sorting needs to be deferred for --du:
     if (list.topsort != null) {
         std.mem.sort(?*types.Info, sav[0..@intCast(n)], list.topsort.?, list.infoLessThan);
     }
 
-    c.free(path);
+    const sav_len: usize = @intCast(n + 1);
+    if (sav_len != sav_alloc) {
+        const shrunk = util.gpa.realloc(sav[0..sav_alloc], sav_len) catch {
+            std.debug.print("tree: virtual memory exhausted.\n", .{});
+            std.process.exit(1);
+        };
+        sav = shrunk.ptr;
+    }
     if (n == 0) {
-        free_dir(sav);
+        freeDir(sav);
         return null;
     }
-    if (ig != null) _ = filter.pop_filterstack();
-    if (inf != null) _ = info_mod.pop_infostack();
     return sav;
 }
 
@@ -884,6 +937,8 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
     list.basesort = &alnumsort;
     list.topsort = null;
     var dirname: [*c][*c]u8 = null;
+    const dirname_initial_cap: usize = 30;
+    const dirname_grow_step: usize = 20;
 
     const environ = init.environ_map;
     util.init(init.io, std.Io.File.stdout(), init.gpa, init.arena.allocator());
@@ -911,9 +966,21 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
     @memset(@as([*]u8, @ptrCast(&flag))[0..@sizeOf(types.Flags)], 0);
 
     maxdirs = std.fs.max_path_bytes;
-    dirs = @ptrCast(@alignCast(util.xmalloc(@sizeOf(c_int) * maxdirs)));
-    @memset(@as([*]u8, @ptrCast(dirs))[0 .. @sizeOf(c_int) * maxdirs], 0);
-    dirs[0] = 0;
+    const dirs_buf = try util.gpa.alloc(c_int, maxdirs);
+    @memset(dirs_buf, 0);
+    dirs = dirs_buf.ptr;
+    defer {
+        util.gpa.free(dirs[0..maxdirs]);
+        dirs = null;
+        if (getinfo_lbuf.len > 0) {
+            util.gpa.free(getinfo_lbuf);
+            getinfo_lbuf = &.{};
+        }
+        if (read_dir_path.len > 0) {
+            util.gpa.free(read_dir_path);
+            read_dir_path = &.{};
+        }
+    }
     Level = -1;
 
     _ = c.setlocale(c.LC_CTYPE, "");
@@ -1326,11 +1393,11 @@ fn runWithArgv(init: std.process.Init, argv_slice: [:null][*c]u8) RunError!void 
             }
         } else {
             if (dirname == null) {
-                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + c.MINIT))));
-                q = c.MINIT;
+                dirname = @ptrCast(@alignCast(util.xmalloc(@sizeOf([*c]u8) * (q + dirname_initial_cap))));
+                q = dirname_initial_cap;
             } else if (p == (q - 1)) {
-                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + c.MINC))));
-                q += c.MINC;
+                dirname = @ptrCast(@alignCast(util.xrealloc(@ptrCast(dirname), @sizeOf([*c]u8) * (q + dirname_grow_step))));
+                q += dirname_grow_step;
             }
             dirname[p] = util.scopy(argv[i]);
             p += 1;

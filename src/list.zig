@@ -11,6 +11,7 @@ const html = @import("html.zig");
 const util = @import("util.zig");
 const filter = @import("filter.zig");
 const info_mod = @import("info.zig");
+const freeDir = info_mod.freeDir;
 const linux = @import("linux.zig");
 
 pub const GetFullTreeFn = fn ([*c]u8, c_ulong, c.dev_t, *c.off_t, [*c][*c]u8) [*c]?*types.Info;
@@ -76,7 +77,6 @@ extern var Level: isize;
 extern var htmldirlen: usize;
 
 extern fn read_dir(dir: [*c]u8, n: [*c]isize, infotop: c_int) [*c]?*types.Info;
-extern fn free_dir(d: [*c]?*types.Info) void;
 
 var errbuf: [256]u8 = undefined;
 var realbasepath: [std.fs.max_path_bytes]u8 = std.mem.zeroes([std.fs.max_path_bytes]u8);
@@ -139,6 +139,10 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
             if (needfulltree) {
                 dir = getfulltree(dirname[i], 0, st_dev, &info.*.size, &err);
                 n = if (err != null) -1 else 0;
+                if (err != null) {
+                    util.gpa.free(@constCast(c.strSpan(err)));
+                    err = null;
+                }
             } else {
                 filter.pushFiles(dirname[i], &ig, &inf, true);
                 dir = read_dir(dirname[i], &n, @intFromBool(inf != null));
@@ -169,7 +173,7 @@ pub fn emit_tree(lc: types.ListingCalls, dirname: [*c][*c]u8, needfulltree: bool
             }
         }
         if (dir != null) {
-            free_dir(dir);
+            freeDir(dir);
             dir = null;
         }
         if (needsclosed != 0) lc.close.?(info, 0, @intFromBool(dirname[i + 1] != null));
@@ -329,7 +333,7 @@ pub fn listdir(
                             _ = c.sprintf(&errbuf, "%ld entries exceeds filelimit, not opening dir", @as(c_long, @intCast(n)));
                             err = &errbuf;
                             errors += 1;
-                            free_dir(subdir);
+                            freeDir(subdir);
                             subdir = null;
                         }
                     }
@@ -355,7 +359,7 @@ pub fn listdir(
         }
 
         if (subdir != null) {
-            free_dir(subdir);
+            freeDir(subdir);
             subdir = null;
         }
         if (needsclosed != 0) {
